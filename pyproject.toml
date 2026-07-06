@@ -1,0 +1,35 @@
+[project]
+name = "contextual-intelligence"
+version = "0.1.0"
+description = "Windows-native local-first contextual lookup: select a word anywhere, capture surrounding context via UI Automation, answer through LM Studio."
+readme = "README.md"
+authors = [
+    { name = "techn3rd", email = "6035483+kevinrkirby@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=2.44.0",
+    "pydantic>=2.13.4",
+    "pywin32>=312",
+    "uiautomation>=2.0.29",
+]
+
+[project.scripts]
+ci-lookup = "contextual_intelligence.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
