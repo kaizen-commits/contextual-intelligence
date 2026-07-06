@@ -45,15 +45,35 @@ class HotkeyBridge(QObject):
 
     hotkey_pressed = Signal()
 
+    def __init__(self, parent: Any | None = None) -> None:
+        super().__init__(parent)
+        self.thread: threading.Thread | None = None
+        self.thread_id: int | None = None
+
     def start(self, vk: int = ord("D")) -> None:
-        thread = threading.Thread(target=self._loop, args=(vk,), daemon=True)
-        thread.start()
+        self.thread = threading.Thread(target=self._loop, args=(vk,), daemon=True)
+        self.thread.start()
 
     def _loop(self, vk: int) -> None:
+        def _set_thread_id(tid: int) -> None:
+            self.thread_id = tid
+
         try:
-            run_hotkey_loop(lambda: self.hotkey_pressed.emit(), vk=vk)
+            run_hotkey_loop(
+                lambda: self.hotkey_pressed.emit(),
+                vk=vk,
+                on_thread_id=_set_thread_id,
+            )
         except Exception as exc:
             log.error("hotkey loop stopped: %s", exc)
+
+    def stop(self) -> None:
+        if self.thread_id is not None:
+            import ctypes
+            # Post WM_QUIT (0x0012) to the message loop running on the hotkey thread
+            ctypes.windll.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
+        if self.thread is not None:
+            self.thread.join(1.0)
 
 
 class TrayApplication(QObject):
@@ -87,12 +107,20 @@ class TrayApplication(QObject):
         self.hotkey_bridge.hotkey_pressed.connect(self.trigger_lookup)
         self.hotkey_bridge.start()
 
+        # Warm up UI Automation in a background thread to avoid cold startup latency (~2s)
+        threading.Thread(target=self._warmup_uia, daemon=True).start()
+
+    def _warmup_uia(self) -> None:
+        try:
+            import uiautomation as auto
+            with auto.UIAutomationInitializerInThread(debug=False):
+                auto.GetFocusedControl()
+            log.info("UIA warmed up successfully")
+        except Exception as exc:
+            log.debug("UIA warm-up failed: %s", exc)
+
     def _setup_menu(self) -> None:
         menu = QMenu()
-        lookup_action = menu.addAction("Lookup Selected Text (Ctrl+Alt+D)")
-        lookup_action.triggered.connect(self.trigger_lookup)
-
-        menu.addSeparator()
         quit_action = menu.addAction("Quit Contextual Intelligence")
         quit_action.triggered.connect(self.quit)
 
@@ -121,6 +149,13 @@ class TrayApplication(QObject):
 
     def quit(self) -> None:
         log.info("quitting tray app")
+        # 1. Stop hotkey loop
+        self.hotkey_bridge.stop()
+
+        # 2. Cancel and wait for a live worker (bounded wait)
+        if not self.popup.cancel_lookup(2000):
+            log.warning("worker thread did not stop within 2 seconds; proceeding anyway")
+
         self.popup.close()
         self.tray_icon.hide()
         self.app.quit()

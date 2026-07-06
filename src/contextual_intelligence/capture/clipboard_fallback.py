@@ -20,6 +20,7 @@ import logging
 import threading
 import time
 from enum import StrEnum
+from ctypes import wintypes
 
 import win32clipboard
 import win32con
@@ -36,6 +37,90 @@ VK_LWIN = 0x5B
 VK_RWIN = 0x5C
 VK_C = 0x43
 KEYEVENTF_KEYUP = 0x0002
+
+# Ctypes structures for SendInput
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", wintypes.WORD),
+        ("wScan", wintypes.WORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_ulonglong),
+    ]
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", wintypes.LONG),
+        ("dy", wintypes.LONG),
+        ("mouseData", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_ulonglong),
+    ]
+
+class HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", wintypes.DWORD),
+        ("wParamL", wintypes.WORD),
+        ("wParamH", wintypes.WORD),
+    ]
+
+class INPUT_UNION(ctypes.Union):
+    _fields_ = [
+        ("ki", KEYBDINPUT),
+        ("mi", MOUSEINPUT),
+        ("hi", HARDWAREINPUT),
+    ]
+
+class INPUT(ctypes.Structure):
+    _fields_ = [
+        ("type", wintypes.DWORD),
+        ("union", INPUT_UNION),
+    ]
+
+INPUT_KEYBOARD = 1
+
+
+def _send_inputs(inputs: list[INPUT]) -> None:
+    n_inputs = len(inputs)
+    input_array = (INPUT * n_inputs)(*inputs)
+    sent = user32.SendInput(n_inputs, ctypes.byref(input_array), ctypes.sizeof(INPUT))
+    if sent != n_inputs:
+        raise CaptureError(
+            f"SendInput failed: sent {sent} of {n_inputs} inputs",
+            CaptureTier.CLIPBOARD,
+        )
+
+
+def _has_non_text_format() -> bool:
+    """Check if the clipboard holds high-value non-text formats to avoid clobbering."""
+    NON_TEXT_FORMATS = {
+        win32con.CF_BITMAP,
+        win32con.CF_DIB,
+        win32con.CF_DIBV5,
+        win32con.CF_HDROP,
+        win32con.CF_WAVE,
+        win32con.CF_RIFF,
+    }
+    for _ in range(5):
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                fmt = 0
+                while True:
+                    fmt = win32clipboard.EnumClipboardFormats(fmt)
+                    if fmt == 0:
+                        break
+                    if fmt in NON_TEXT_FORMATS:
+                        return True
+                return False
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception:
+            time.sleep(0.02)
+    # Fail closed: if we cannot open the clipboard to inspect it after retries,
+    # assume it has non-text to prevent clobbering.
+    return True
 
 
 class ListenerState(StrEnum):
@@ -80,18 +165,56 @@ def _restore_clipboard(text: str | None) -> None:
 
 def _clear_modifiers() -> None:
     """Release any modifier keys held down from triggering the hotkey (e.g., Alt from Ctrl+Alt+D)."""
+    inputs = []
     for vk in (VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN):
         if user32.GetAsyncKeyState(vk) & 0x8000:
-            user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
-    time.sleep(0.02)
+            inputs.append(
+                INPUT(
+                    type=INPUT_KEYBOARD,
+                    union=INPUT_UNION(
+                        ki=KEYBDINPUT(wVk=vk, wScan=0, dwFlags=KEYEVENTF_KEYUP, time=0, dwExtraInfo=0)
+                    ),
+                )
+            )
+    if inputs:
+        _send_inputs(inputs)
+        # Wait for modifier release to register fully (avoid alt-key combinations clashing)
+        time.sleep(0.05)
 
 
 def _send_ctrl_c() -> None:
     _clear_modifiers()
-    user32.keybd_event(VK_CONTROL, 0, 0, 0)
-    user32.keybd_event(VK_C, 0, 0, 0)
-    user32.keybd_event(VK_C, 0, KEYEVENTF_KEYUP, 0)
-    user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+    inputs = [
+        # Ctrl Down
+        INPUT(
+            type=INPUT_KEYBOARD,
+            union=INPUT_UNION(
+                ki=KEYBDINPUT(wVk=VK_CONTROL, wScan=0, dwFlags=0, time=0, dwExtraInfo=0)
+            ),
+        ),
+        # C Down
+        INPUT(
+            type=INPUT_KEYBOARD,
+            union=INPUT_UNION(
+                ki=KEYBDINPUT(wVk=VK_C, wScan=0, dwFlags=0, time=0, dwExtraInfo=0)
+            ),
+        ),
+        # C Up
+        INPUT(
+            type=INPUT_KEYBOARD,
+            union=INPUT_UNION(
+                ki=KEYBDINPUT(wVk=VK_C, wScan=0, dwFlags=KEYEVENTF_KEYUP, time=0, dwExtraInfo=0)
+            ),
+        ),
+        # Ctrl Up
+        INPUT(
+            type=INPUT_KEYBOARD,
+            union=INPUT_UNION(
+                ki=KEYBDINPUT(wVk=VK_CONTROL, wScan=0, dwFlags=KEYEVENTF_KEYUP, time=0, dwExtraInfo=0)
+            ),
+        ),
+    ]
+    _send_inputs(inputs)
 
 
 class ClipboardFallbackProvider:
@@ -135,6 +258,11 @@ class ClipboardFallbackProvider:
             self.disarm()
 
     def _do_capture(self) -> ContextPayload:
+        if _has_non_text_format():
+            raise CaptureError(
+                "clipboard holds non-text content; fallback skipped",
+                CaptureTier.CLIPBOARD,
+            )
         saved_text = _save_clipboard()
         seq_before = user32.GetClipboardSequenceNumber()
 

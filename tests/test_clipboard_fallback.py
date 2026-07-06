@@ -72,3 +72,13 @@ def test_clipboard_sequence_not_incrementing_raises_error(monkeypatch):
         provider.capture()
 
     assert len(restored) == 1
+
+
+def test_clipboard_non_text_format_aborts(monkeypatch):
+    provider = ClipboardFallbackProvider()
+    provider.arm()
+
+    monkeypatch.setattr(clipboard_fallback, "_has_non_text_format", lambda: True)
+
+    with pytest.raises(CaptureError, match="clipboard holds non-text content; fallback skipped"):
+        provider.capture()

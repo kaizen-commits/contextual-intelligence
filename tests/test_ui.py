@@ -113,3 +113,26 @@ def test_lookup_worker_cancellation(qapp):
 
     worker.run()
     assert len(tokens) == 2
+
+
+def test_popup_rapid_double_trigger(qapp):
+    popup = LookupPopupWindow()
+    orch = MockOrchestrator()
+    llm = MockLlmClient()
+
+    worker1 = LookupWorker(orch, llm)
+    worker2 = LookupWorker(orch, llm)
+
+    # Start first lookup
+    popup.start_lookup(worker1)
+    assert popup._worker is worker1
+    assert worker1.isRunning()
+
+    # Start second lookup rapidly
+    popup.start_lookup(worker2)
+    # The second trigger should be ignored since worker1 is still running
+    assert popup._worker is worker1
+
+    # Clean up
+    worker1.cancel()
+    worker1.wait()

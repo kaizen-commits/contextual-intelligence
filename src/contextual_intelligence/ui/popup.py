@@ -79,6 +79,7 @@ class LookupPopupWindow(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setStyleSheet(STYLESHEET)
         self.resize(400, 150)
         self.setMinimumWidth(380)
@@ -143,9 +144,21 @@ class LookupPopupWindow(QWidget):
         card_layout.addWidget(self.syn_label)
 
     def start_lookup(self, worker: LookupWorker) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            log.warning("Lookup already in progress, ignoring trigger")
+            return
+
         if self._worker is not None:
-            self._worker.cancel()
-            self._worker.deleteLater()
+            # Disconnect all signals from the old worker to prevent late callbacks from clobbering the UI
+            try:
+                self._worker.disconnect(self)
+            except Exception:
+                pass
+            # Schedule safe deletion or delete immediately if already finished
+            if self._worker.isFinished():
+                self._worker.deleteLater()
+            else:
+                self._worker.finished.connect(self._worker.deleteLater)
 
         self._worker = worker
         self._worker.started_capture.connect(self._on_started)
@@ -156,8 +169,15 @@ class LookupPopupWindow(QWidget):
 
         self._position_near_cursor()
         self.show()
-        self.activateWindow()
         self._worker.start()
+
+    def cancel_lookup(self, timeout_ms: int = 2000) -> bool:
+        """Cancel the active worker and wait for it to exit (bounded wait)."""
+        if self._worker is not None and self._worker.isRunning():
+            log.info("cancelling active worker thread")
+            self._worker.cancel()
+            return self._worker.wait(timeout_ms)
+        return True
 
     def _position_near_cursor(self) -> None:
         pos = QCursor.pos()
@@ -242,6 +262,5 @@ class LookupPopupWindow(QWidget):
             super().mouseMoveEvent(event)
 
     def closeEvent(self, event: Any) -> None:
-        if self._worker is not None:
-            self._worker.cancel()
+        self.cancel_lookup()
         super().closeEvent(event)
