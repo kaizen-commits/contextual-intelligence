@@ -109,6 +109,17 @@ def cmd_listen(settings: Settings) -> int:
     return 0
 
 
+def cmd_tray(settings: Settings) -> int:
+    from contextual_intelligence.ui.tray import TrayApplication
+
+    app = TrayApplication(
+        settings=settings,
+        orchestrator=build_orchestrator(settings),
+        llm_client=LlmClient(settings),
+    )
+    return app.run()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ci-lookup", description=__doc__)
     parser.add_argument("--log-level", default=None)
@@ -118,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--delay", type=int, default=3)
     sub.add_parser("listen")
+    for name in ("tray", "gui"):
+        sub.add_parser(name)
 
     args = parser.parse_args(argv)
     # Windows consoles/redirects default to legacy codepages; model output is UTF-8.
@@ -136,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_lookup(settings, args.delay)
         case "listen":
             return cmd_listen(settings)
+        case "tray" | "gui":
+            return cmd_tray(settings)
     return 2
 
 

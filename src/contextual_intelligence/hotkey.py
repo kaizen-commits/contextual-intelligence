@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import time
 from ctypes import wintypes
 from typing import Callable
 
@@ -17,6 +18,8 @@ MOD_ALT = 0x0001
 MOD_CONTROL = 0x0002
 MOD_NOREPEAT = 0x4000
 WM_HOTKEY = 0x0312
+WM_QUIT = 0x0012
+PM_REMOVE = 0x0001
 
 _HOTKEY_ID = 1
 
@@ -38,11 +41,18 @@ def run_hotkey_loop(callback: Callable[[], None], vk: int = ord("D")) -> None:
     log.info("hotkey registered: Ctrl+Alt+%s (Ctrl+C in this console to quit)", chr(vk))
     try:
         msg = wintypes.MSG()
-        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-            if msg.message == WM_HOTKEY and msg.wParam == _HOTKEY_ID:
-                try:
-                    callback()
-                except Exception:
-                    log.exception("lookup failed")
+        while True:
+            if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
+                if msg.message == WM_QUIT:
+                    break
+                if msg.message == WM_HOTKEY and msg.wParam == _HOTKEY_ID:
+                    try:
+                        callback()
+                    except Exception:
+                        log.exception("lookup failed")
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+            else:
+                time.sleep(0.02)
     finally:
         user32.UnregisterHotKey(None, _HOTKEY_ID)

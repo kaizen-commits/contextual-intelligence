@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass
 from typing import Protocol, Sequence, runtime_checkable
 
+from pydantic import ValidationError
+
 from contextual_intelligence.models import CaptureError, ContextPayload
 
 log = logging.getLogger(__name__)
@@ -51,10 +53,11 @@ class CaptureOrchestrator:
             start = time.perf_counter()
             try:
                 payload = provider.capture()
-            except CaptureError as exc:
+            except (CaptureError, ValidationError) as exc:
                 ms = (time.perf_counter() - start) * 1000
-                self.last_attempts.append(CaptureAttempt(provider.name, False, ms, exc.reason))
-                log.info("capture tier=%s ok=False ms=%.0f reason=%s", provider.name, ms, exc.reason)
+                reason = exc.reason if isinstance(exc, CaptureError) else f"validation error: {exc}"
+                self.last_attempts.append(CaptureAttempt(provider.name, False, ms, reason))
+                log.info("capture tier=%s ok=False ms=%.0f reason=%s", provider.name, ms, reason)
                 continue
             ms = (time.perf_counter() - start) * 1000
             self.last_attempts.append(CaptureAttempt(provider.name, True, ms))

@@ -63,3 +63,17 @@ def test_attempts_reset_between_captures():
     orch.capture()
     orch.capture()
     assert len(orch.last_attempts) == 1
+
+
+def test_catches_validation_error_and_falls_through():
+    class Invalid:
+        name = "invalid"
+
+        def capture(self):
+            return ContextPayload(selected_text="", tier=CaptureTier.UIA)
+
+    orch = CaptureOrchestrator([Invalid(), Succeeds()])
+    result = orch.capture()
+    assert result.selected_text == "word"
+    assert [a.ok for a in orch.last_attempts] == [False, True]
+    assert "validation error" in (orch.last_attempts[0].error or "")

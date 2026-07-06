@@ -100,28 +100,58 @@ class UiaCaptureProvider:
         return None
 
     def _surrounding(self, sel_range, selected: str, auto) -> tuple[str, str]:
-        """Expand a clone of the selection range by N characters each side and
-        split the result around the selection. Context loss here is
-        non-fatal — a payload with empty context is still useful."""
+        """Expand surrounding context by cloning the selection range and moving
+        endpoints independently. This avoids repeated-term misalignment when
+        the selected term appears multiple times in the context window."""
+        before = ""
+        after = ""
         try:
-            expanded = sel_range.Clone()
-            expanded.MoveEndpointByUnit(
+            before_range = sel_range.Clone()
+            before_range.MoveEndpointByUnit(
                 auto.TextPatternRangeEndpoint.Start, auto.TextUnit.Character,
                 -self._context_chars,
             )
-            expanded.MoveEndpointByUnit(
+            before_range.MoveEndpointByRange(
+                auto.TextPatternRangeEndpoint.End, sel_range,
+                auto.TextPatternRangeEndpoint.Start,
+            )
+            before = before_range.GetText(-1) or ""
+        except Exception as exc:
+            log.debug("before-context expansion failed: %s", exc)
+
+        try:
+            after_range = sel_range.Clone()
+            after_range.MoveEndpointByUnit(
                 auto.TextPatternRangeEndpoint.End, auto.TextUnit.Character,
                 self._context_chars,
             )
-            full = expanded.GetText(-1) or ""
+            after_range.MoveEndpointByRange(
+                auto.TextPatternRangeEndpoint.Start, sel_range,
+                auto.TextPatternRangeEndpoint.End,
+            )
+            after = after_range.GetText(-1) or ""
         except Exception as exc:
-            log.debug("context expansion failed: %s", exc)
-            return "", ""
+            log.debug("after-context expansion failed: %s", exc)
 
-        idx = full.find(selected)
-        if idx < 0:
-            # Selection text not found verbatim (some apps normalize whitespace
-            # differently across ranges); context would be misaligned, drop it.
-            log.debug("selection not found in expanded range; dropping context")
-            return "", ""
-        return full[:idx], full[idx + len(selected):]
+        # Fallback to string splitting if endpoint manipulation returned empty
+        # when an expanded range would have worked.
+        if not before and not after:
+            try:
+                expanded = sel_range.Clone()
+                expanded.MoveEndpointByUnit(
+                    auto.TextPatternRangeEndpoint.Start, auto.TextUnit.Character,
+                    -self._context_chars,
+                )
+                expanded.MoveEndpointByUnit(
+                    auto.TextPatternRangeEndpoint.End, auto.TextUnit.Character,
+                    self._context_chars,
+                )
+                full = expanded.GetText(-1) or ""
+                idx = full.find(selected)
+                if idx >= 0:
+                    before = full[:idx]
+                    after = full[idx + len(selected):]
+            except Exception as exc:
+                log.debug("fallback context expansion failed: %s", exc)
+
+        return before, after
