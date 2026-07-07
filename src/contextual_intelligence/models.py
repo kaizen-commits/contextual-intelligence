@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 # A "selection" is a word or short phrase, not a document.
 MAX_SELECTION_CHARS = 400
+MAX_PASTE_INPUT_CHARS = 8000
 # Control characters other than tab/newline signal a broken capture.
 MAX_CONTROL_CHAR_RATIO = 0.05
 
@@ -99,3 +100,60 @@ class ContextPayload(BaseModel):
         if len(after) > budget_after:
             after = after[:budget_after]
         return before, after
+
+
+class PastePayload(BaseModel):
+    text: str
+    instruction: str
+    app_name: str = ""
+    captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_validator("text", "instruction", mode="before")
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError("fields must be strings")
+        return value.replace("\r\n", "\n").replace("\r", "\n")
+
+    @field_validator("text")
+    @classmethod
+    def _validate_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("empty clipboard text")
+        if len(value) > MAX_PASTE_INPUT_CHARS:
+            raise ValueError(
+                f"clipboard text too long ({len(value)} chars > {MAX_PASTE_INPUT_CHARS}); "
+                "not a smart paste target"
+            )
+        return value
+
+    @field_validator("instruction")
+    @classmethod
+    def _validate_instruction(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("empty instruction")
+        return value
+
+    @model_validator(mode="after")
+    def _reject_mojibake(self) -> PastePayload:
+        if _looks_like_mojibake(self.text):
+            raise ValueError("clipboard text looks like mojibake or binary noise")
+        if _looks_like_mojibake(self.instruction):
+            raise ValueError("instruction looks like mojibake or binary noise")
+        return self
+
+
+class PasteResult(BaseModel):
+    payload: PastePayload
+    transformed_text: str
+    duration_ms: float = 0.0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_validator("transformed_text", mode="before")
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError("transformed_text must be a string")
+        return value.replace("\r\n", "\n").replace("\r", "\n")

@@ -14,7 +14,16 @@ from typing import Protocol, Sequence, runtime_checkable
 
 from pydantic import ValidationError
 
+from contextual_intelligence.capture.uia import get_foreground_app_name, get_process_image_name
 from contextual_intelligence.models import CaptureError, ContextPayload
+
+__all__ = [
+    "CaptureProvider",
+    "CaptureAttempt",
+    "CaptureOrchestrator",
+    "get_foreground_app_name",
+    "get_process_image_name",
+]
 
 log = logging.getLogger(__name__)
 

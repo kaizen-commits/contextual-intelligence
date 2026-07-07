@@ -1,5 +1,10 @@
-from contextual_intelligence.llm import SYSTEM_PROMPT, build_lookup_prompt
-from contextual_intelligence.models import CaptureTier, ContextPayload
+from contextual_intelligence.llm import (
+    PASTE_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    build_lookup_prompt,
+    build_paste_prompt,
+)
+from contextual_intelligence.models import CaptureTier, ContextPayload, PastePayload
 
 
 def test_prompt_marks_selection_in_passage():
@@ -36,3 +41,23 @@ def test_prompt_without_context_asks_general_meaning():
 def test_system_prompt_pins_card_shape():
     for marker in ("part of speech", "Context:", "Synonyms:"):
         assert marker in SYSTEM_PROMPT
+
+
+def test_build_paste_prompt_with_app():
+    p = PastePayload(text="some code", instruction="explain", app_name="vscode.exe")
+    prompt = build_paste_prompt(p)
+    assert "Instruction: explain" in prompt
+    assert "(from vscode.exe)" in prompt
+    assert "some code" in prompt
+
+
+def test_build_paste_prompt_without_app():
+    p = PastePayload(text="some text", instruction="summarize")
+    prompt = build_paste_prompt(p)
+    assert "Instruction: summarize" in prompt
+    assert "(from" not in prompt
+    assert "some text" in prompt
+
+
+def test_paste_system_prompt_instructions():
+    assert "ONLY the transformed text directly" in PASTE_SYSTEM_PROMPT

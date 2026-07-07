@@ -1,7 +1,8 @@
-"""Minimal global hotkey via RegisterHotKey + message loop.
+"""Global hotkey registration and message loop.
 
-Phase 0 keeps this deliberately tiny: one hotkey, one callback, blocking
-loop. The PySide6-integrated version arrives with the popup in Phase 1.
+Supports registering multiple hotkeys on a single message loop thread with
+degradation semantics: if one hotkey fails to register (e.g., due to a conflict),
+other hotkeys continue to function.
 """
 
 from __future__ import annotations
@@ -19,7 +20,9 @@ MOD_NOREPEAT = 0x4000
 WM_HOTKEY = 0x0312
 WM_QUIT = 0x0012
 
-_HOTKEY_ID = 1
+# Standard hotkey IDs used across the application
+LOOKUP_HOTKEY_ID = 1
+PASTE_HOTKEY_ID = 2
 
 
 class HotkeyError(RuntimeError):
@@ -27,22 +30,46 @@ class HotkeyError(RuntimeError):
 
 
 def run_hotkey_loop(
-    callback: Callable[[], None],
+    callback: Callable[[], None] | None = None,
     vk: int = ord("D"),
     on_thread_id: Callable[[int], None] | None = None,
+    hotkey_map: dict[int, tuple[int, Callable[[], None]]] | None = None,
+    on_registration_failure: Callable[[int, int], None] | None = None,
 ) -> None:
-    """Register Ctrl+Alt+<vk> and invoke callback per press. Blocks forever
-    (WM_QUIT to stop). Raises HotkeyError if registration fails — usually a
-    conflict with another app."""
+    """Register hotkeys and process WM_HOTKEY messages on the calling thread.
+
+    Can be called either in legacy single-hotkey mode via `callback` and `vk`,
+    or in multi-hotkey mode via `hotkey_map` which maps hotkey_id -> (vk, callback).
+
+    If multiple hotkeys are provided and at least one registers successfully,
+    the message loop runs (degradation semantics). If ALL hotkeys fail to register,
+    raises HotkeyError.
+    """
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
 
-    if not user32.RegisterHotKey(None, _HOTKEY_ID, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, vk):
-        raise HotkeyError(
-            f"RegisterHotKey failed for Ctrl+Alt+{chr(vk)} — "
-            "another app may own this hotkey"
-        )
-    log.info("hotkey registered: Ctrl+Alt+%s", chr(vk))
+    if hotkey_map is None:
+        if callback is None:
+            raise ValueError("Must provide either callback or hotkey_map")
+        hotkey_map = {LOOKUP_HOTKEY_ID: (vk, callback)}
+
+    registered_ids: list[int] = []
+
+    for hotkey_id, (vk_code, cb) in hotkey_map.items():
+        if user32.RegisterHotKey(None, hotkey_id, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, vk_code):
+            log.info("hotkey registered [id=%d]: Ctrl+Alt+%s", hotkey_id, chr(vk_code))
+            registered_ids.append(hotkey_id)
+        else:
+            log.warning(
+                "RegisterHotKey failed for [id=%d] Ctrl+Alt+%s — another app may own this hotkey",
+                hotkey_id,
+                chr(vk_code),
+            )
+            if on_registration_failure is not None:
+                on_registration_failure(hotkey_id, vk_code)
+
+    if not registered_ids:
+        raise HotkeyError("All hotkeys failed to register — another app may own them")
 
     if on_thread_id is not None:
         on_thread_id(kernel32.GetCurrentThreadId())
@@ -50,12 +77,16 @@ def run_hotkey_loop(
     try:
         msg = wintypes.MSG()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-            if msg.message == WM_HOTKEY and msg.wParam == _HOTKEY_ID:
-                try:
-                    callback()
-                except Exception:
-                    log.exception("lookup failed")
+            if msg.message == WM_HOTKEY:
+                hotkey_id = msg.wParam
+                if hotkey_id in hotkey_map:
+                    try:
+                        _, cb = hotkey_map[hotkey_id]
+                        cb()
+                    except Exception:
+                        log.exception("hotkey callback failed for id=%d", hotkey_id)
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
     finally:
-        user32.UnregisterHotKey(None, _HOTKEY_ID)
+        for hotkey_id in registered_ids:
+            user32.UnregisterHotKey(None, hotkey_id)

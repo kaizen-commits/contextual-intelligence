@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QCursor, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from contextual_intelligence.models import ContextPayload
+from contextual_intelligence.ui.positioning import clamp_to_screen, position_near_cursor
 from contextual_intelligence.ui.worker import LookupWorker
 
 log = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ class LookupPopupWindow(QWidget):
         self._worker.finished_lookup.connect(self._on_finished)
         self._worker.error_occurred.connect(self._on_error)
 
-        self._position_near_cursor()
+        position_near_cursor(self)
         self.show()
         self._worker.start()
 
@@ -180,33 +180,6 @@ class LookupPopupWindow(QWidget):
             return self._worker.wait(timeout_ms)
         return True
 
-    def _position_near_cursor(self) -> None:
-        pos = QCursor.pos()
-        # screenAt, not primaryScreen: on multi-monitor layouts the cursor's
-        # screen may sit at negative virtual-desktop coordinates, and clamping
-        # against the primary screen throws the popup onto the wrong monitor.
-        screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
-        if screen:
-            geom = screen.availableGeometry()
-            x = min(pos.x() + 15, geom.right() - self.width() - 10)
-            y = min(pos.y() + 15, geom.bottom() - self.height() - 10)
-            self.move(max(geom.left() + 10, x), max(geom.top() + 10, y))
-        else:
-            self.move(pos.x() + 15, pos.y() + 15)
-
-    def _clamp_to_screen(self) -> None:
-        """Keep the popup fully on its current screen after adjustSize growth."""
-        screen = (
-            QGuiApplication.screenAt(self.frameGeometry().center())
-            or QGuiApplication.primaryScreen()
-        )
-        if screen is None:
-            return
-        geom = screen.availableGeometry()
-        x = min(self.x(), geom.right() - self.width() - 10)
-        y = min(self.y(), geom.bottom() - self.height() - 10)
-        self.move(max(geom.left() + 10, x), max(geom.top() + 10, y))
-
     def _on_started(self) -> None:
         self._buffer = ""
         self.title_label.hide()
@@ -216,13 +189,13 @@ class LookupPopupWindow(QWidget):
         self.status_label.setText("⏳ Analyzing context...")
         self.status_label.show()
         self.adjustSize()
-        self._clamp_to_screen()
+        clamp_to_screen(self)
 
     def _on_capture_succeeded(self, payload: ContextPayload) -> None:
         app = payload.app_name or "unknown app"
         self.status_label.setText(f"⏳ Defining '{payload.selected_text}' ({app})...")
         self.adjustSize()
-        self._clamp_to_screen()
+        clamp_to_screen(self)
 
     def _on_token(self, chunk: str) -> None:
         self._buffer += chunk
@@ -247,7 +220,7 @@ class LookupPopupWindow(QWidget):
             self.syn_label.show()
 
         self.adjustSize()
-        self._clamp_to_screen()
+        clamp_to_screen(self)
 
     def _on_finished(self) -> None:
         if self._buffer.strip():
@@ -259,7 +232,7 @@ class LookupPopupWindow(QWidget):
             )
             self.status_label.show()
         self.adjustSize()
-        self._clamp_to_screen()
+        clamp_to_screen(self)
 
     def _on_error(self, msg: str) -> None:
         self.title_label.hide()
@@ -269,7 +242,7 @@ class LookupPopupWindow(QWidget):
         self.status_label.setText(f"❌ {msg}")
         self.status_label.show()
         self.adjustSize()
-        self._clamp_to_screen()
+        clamp_to_screen(self)
 
     def keyPressEvent(self, event: Any) -> None:
         if event.key() == Qt.Key.Key_Escape:

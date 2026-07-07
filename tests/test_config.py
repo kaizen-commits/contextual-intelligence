@@ -5,6 +5,9 @@ def test_defaults():
     s = Settings()
     assert s.base_url == "http://localhost:1234/v1"
     assert s.context_chars_per_side == 1500
+    assert s.paste_hotkey_vk == 0x56
+    assert s.max_paste_input_chars == 8000
+    assert s.max_paste_output_tokens == 1000
 
 
 def test_load_dotenv_parses_and_respects_existing(tmp_path, monkeypatch):
@@ -45,3 +48,13 @@ def test_dotenv_feeds_settings(tmp_path, monkeypatch):
     env.write_text("LMSTUDIO_API_KEY=sk-test-key\n")
     s = load_settings(path=tmp_path / "no-toml", dotenv=env)
     assert s.api_key == "sk-test-key"
+
+
+def test_paste_env_overrides(tmp_path, monkeypatch):
+    monkeypatch.setenv("CI_PASTE_HOTKEY_VK", "88")
+    monkeypatch.setenv("CI_MAX_PASTE_INPUT_CHARS", "5000")
+    monkeypatch.setenv("CI_MAX_PASTE_OUTPUT_TOKENS", "250")
+    s = load_settings(path=tmp_path / "no-toml", dotenv=tmp_path / "no-env")
+    assert s.paste_hotkey_vk == 88
+    assert s.max_paste_input_chars == 5000
+    assert s.max_paste_output_tokens == 250

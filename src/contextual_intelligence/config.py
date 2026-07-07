@@ -17,6 +17,9 @@ _ENV_OVERRIDES = {
     "LMSTUDIO_API_KEY": "api_key",
     "LMSTUDIO_BASE_URL": "base_url",
     "CI_MODEL": "model",
+    "CI_PASTE_HOTKEY_VK": "paste_hotkey_vk",
+    "CI_MAX_PASTE_INPUT_CHARS": "max_paste_input_chars",
+    "CI_MAX_PASTE_OUTPUT_TOKENS": "max_paste_output_tokens",
 }
 
 
@@ -44,6 +47,9 @@ class Settings(BaseModel):
     context_chars_per_side: int = 1500
     max_prompt_context_chars: int = 1500
     max_answer_tokens: int = 300
+    paste_hotkey_vk: int = 0x56  # ord('V')
+    max_paste_input_chars: int = 8000
+    max_paste_output_tokens: int = 1000
     request_timeout_s: float = 30.0
     log_level: str = "INFO"
 

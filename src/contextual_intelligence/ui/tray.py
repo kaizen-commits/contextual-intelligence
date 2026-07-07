@@ -1,20 +1,21 @@
-"""System tray application and global hotkey integration for Contextual Lookup."""
+"""System tray application and global hotkey integration for Contextual Lookup and Smart Paste."""
 
 from __future__ import annotations
 
 import logging
 import sys
 import threading
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from contextual_intelligence.capture import CaptureOrchestrator
+from contextual_intelligence.capture import CaptureOrchestrator, get_foreground_app_name
 from contextual_intelligence.config import Settings
-from contextual_intelligence.hotkey import run_hotkey_loop
+from contextual_intelligence.hotkey import LOOKUP_HOTKEY_ID, PASTE_HOTKEY_ID, run_hotkey_loop
 from contextual_intelligence.llm import LlmClient
+from contextual_intelligence.ui.palette import PastePaletteWindow
 from contextual_intelligence.ui.popup import LookupPopupWindow
 from contextual_intelligence.ui.worker import LookupWorker
 
@@ -43,26 +44,40 @@ class HotkeyBridge(QObject):
     """Brings win32 RegisterHotKey messages from a daemon thread into the Qt event
     loop safely via signals."""
 
-    hotkey_pressed = Signal()
+    hotkey_pressed = Signal()  # legacy signal for lookup
+    lookup_triggered = Signal()
+    paste_triggered = Signal(str)  # source app name
+    registration_failed = Signal(int, int)  # hotkey_id, vk
 
     def __init__(self, parent: Any | None = None) -> None:
         super().__init__(parent)
         self.thread: threading.Thread | None = None
         self.thread_id: int | None = None
 
-    def start(self, vk: int = ord("D")) -> None:
-        self.thread = threading.Thread(target=self._loop, args=(vk,), daemon=True)
+    def start(self, hotkey_map: dict[int, tuple[int, Callable[[], None]]] | None = None) -> None:
+        self.thread = threading.Thread(target=self._loop, args=(hotkey_map,), daemon=True)
         self.thread.start()
 
-    def _loop(self, vk: int) -> None:
+    def _loop(self, hotkey_map: dict[int, tuple[int, Callable[[], None]]] | None) -> None:
         def _set_thread_id(tid: int) -> None:
             self.thread_id = tid
 
+        def _on_fail(hid: int, vk: int) -> None:
+            self.registration_failed.emit(hid, vk)
+
+        if hotkey_map is None:
+            hotkey_map = {
+                LOOKUP_HOTKEY_ID: (
+                    ord("D"),
+                    lambda: (self.hotkey_pressed.emit(), self.lookup_triggered.emit()),
+                ),
+            }
+
         try:
             run_hotkey_loop(
-                lambda: self.hotkey_pressed.emit(),
-                vk=vk,
+                hotkey_map=hotkey_map,
                 on_thread_id=_set_thread_id,
+                on_registration_failure=_on_fail,
             )
         except Exception as exc:
             log.error("hotkey loop stopped: %s", exc)
@@ -70,14 +85,14 @@ class HotkeyBridge(QObject):
     def stop(self) -> None:
         if self.thread_id is not None:
             import ctypes
-            # Post WM_QUIT (0x0012) to the message loop running on the hotkey thread
+
             ctypes.windll.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
         if self.thread is not None:
             self.thread.join(1.0)
 
 
 class TrayApplication(QObject):
-    """Manages the QApplication, system tray icon, popup window, and hotkey wiring."""
+    """Manages the QApplication, system tray icon, popup window, palette, and hotkey wiring."""
 
     def __init__(
         self,
@@ -97,15 +112,32 @@ class TrayApplication(QObject):
         self.app.setQuitOnLastWindowClosed(False)
 
         self.popup = LookupPopupWindow()
+        self.paste_palette = PastePaletteWindow(settings, llm_client)
         self.tray_icon = QSystemTrayIcon(_create_default_icon(), self.app)
-        self.tray_icon.setToolTip("Contextual Intelligence (Ctrl+Alt+D)")
+        self.tray_icon.setToolTip("Contextual Intelligence (Ctrl+Alt+D / Ctrl+Alt+V)")
 
         self._setup_menu()
         self.tray_icon.show()
 
         self.hotkey_bridge = HotkeyBridge(self)
-        self.hotkey_bridge.hotkey_pressed.connect(self.trigger_lookup)
-        self.hotkey_bridge.start()
+        self.hotkey_bridge.lookup_triggered.connect(self.trigger_lookup)
+        self.hotkey_bridge.paste_triggered.connect(self.trigger_paste)
+        self.hotkey_bridge.registration_failed.connect(self._on_hotkey_failed)
+
+        hotkey_map = {
+            LOOKUP_HOTKEY_ID: (
+                0x44,  # ord('D')
+                lambda: (
+                    self.hotkey_bridge.hotkey_pressed.emit(),
+                    self.hotkey_bridge.lookup_triggered.emit(),
+                ),
+            ),
+            PASTE_HOTKEY_ID: (
+                self.settings.paste_hotkey_vk,
+                lambda: self.hotkey_bridge.paste_triggered.emit(get_foreground_app_name()),
+            ),
+        }
+        self.hotkey_bridge.start(hotkey_map)
 
         # Warm up UI Automation in a background thread to avoid cold startup latency (~2s)
         threading.Thread(target=self._warmup_uia, daemon=True).start()
@@ -113,6 +145,7 @@ class TrayApplication(QObject):
     def _warmup_uia(self) -> None:
         try:
             import uiautomation as auto
+
             with auto.UIAutomationInitializerInThread(debug=False):
                 auto.GetFocusedControl()
             log.info("UIA warmed up successfully")
@@ -126,21 +159,31 @@ class TrayApplication(QObject):
 
         self.tray_icon.setContextMenu(menu)
 
+    def _on_hotkey_failed(self, hid: int, vk: int) -> None:
+        name = "Contextual Lookup" if hid == LOOKUP_HOTKEY_ID else "Smart Paste"
+        char_rep = chr(vk) if 32 <= vk <= 126 else f"0x{vk:x}"
+        log.warning(
+            "Failed to register shortcut for %s (Ctrl+Alt+%s) — another app may own it.",
+            name,
+            char_rep,
+        )
+
     def trigger_lookup(self) -> None:
         log.info("triggering contextual lookup")
         worker = LookupWorker(self.orchestrator, self.llm_client, parent=self)
         self.popup.start_lookup(worker)
+
+    def trigger_paste(self, source_app: str = "") -> None:
+        log.info("triggering smart paste palette (source app: %s)", source_app or "unknown")
+        self.paste_palette.open_palette(source_app)
 
     def run(self) -> int:
         log.info("starting tray app event loop")
         import signal
         from PySide6.QtCore import QTimer
 
-        # Ensure Ctrl+C in terminal triggers clean Qt app shutdown
         signal.signal(signal.SIGINT, lambda *args: self.quit())
 
-        # Qt's C++ event loop blocks Python signal handlers unless Python bytecode is
-        # executed periodically. A periodic timer wakes Python up to check signals.
         timer = QTimer(self.app)
         timer.timeout.connect(lambda: None)
         timer.start(200)
@@ -149,13 +192,14 @@ class TrayApplication(QObject):
 
     def quit(self) -> None:
         log.info("quitting tray app")
-        # 1. Stop hotkey loop
         self.hotkey_bridge.stop()
 
-        # 2. Cancel and wait for a live worker (bounded wait)
         if not self.popup.cancel_lookup(2000):
-            log.warning("worker thread did not stop within 2 seconds; proceeding anyway")
+            log.warning("lookup worker thread did not stop within 2 seconds; proceeding anyway")
+
+        self.paste_palette.cancel_worker(2000)
 
         self.popup.close()
+        self.paste_palette.close()
         self.tray_icon.hide()
         self.app.quit()

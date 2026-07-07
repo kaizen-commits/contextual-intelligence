@@ -8,7 +8,7 @@ from typing import Iterator
 from openai import OpenAI
 
 from contextual_intelligence.config import Settings
-from contextual_intelligence.models import ContextPayload
+from contextual_intelligence.models import ContextPayload, PastePayload
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +29,12 @@ Line 1 is the user's term plus its part of speech in parentheses. Line 2 defines
 the term as used in the passage, one or two sentences. Line 3 names the passage's \
 domain in brackets and what the term means there. Line 4 lists 3-5 synonyms, or "none"."""
 
+PASTE_SYSTEM_PROMPT = """\
+You are a text transformation assistant. The user provides a snippet of text \
+copied from an application and an instruction on how to transform it. Output \
+ONLY the transformed text directly, without introductory chatter, markdown \
+wrapping (unless requested by the instruction), or explanations."""
+
 
 def build_lookup_prompt(payload: ContextPayload, max_context_chars: int) -> str:
     before, after = payload.context_window(max_context_chars)
@@ -42,6 +48,14 @@ def build_lookup_prompt(payload: ContextPayload, max_context_chars: int) -> str:
         f"Term: {payload.selected_text}\n\n"
         f"No surrounding passage was captured (source app: "
         f"{payload.app_name or 'unknown'}). Give the general meaning."
+    )
+
+
+def build_paste_prompt(payload: PastePayload) -> str:
+    app_context = f" (from {payload.app_name})" if payload.app_name else ""
+    return (
+        f"Instruction: {payload.instruction}\n\n"
+        f"Input Text{app_context}:\n{payload.text}"
     )
 
 
@@ -67,6 +81,23 @@ class LlmClient:
                 {"role": "user", "content": prompt},
             ],
             max_tokens=self._settings.max_answer_tokens,
+            stream=True,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                yield delta
+
+    def stream_transform(self, payload: PastePayload) -> Iterator[str]:
+        prompt = build_paste_prompt(payload)
+        log.debug("paste transform prompt (%d chars)", len(prompt))
+        stream = self._client.chat.completions.create(
+            model=self._settings.model,
+            messages=[
+                {"role": "system", "content": PASTE_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=self._settings.max_paste_output_tokens,
             stream=True,
         )
         for chunk in stream:

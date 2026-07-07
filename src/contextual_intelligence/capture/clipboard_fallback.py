@@ -22,9 +22,11 @@ import time
 from enum import StrEnum
 from ctypes import wintypes
 
-import win32clipboard
-import win32con
-
+from contextual_intelligence.clipboard import (
+    has_high_value_non_text_format as _has_non_text_format,
+    read_text_clipboard as _save_clipboard,
+    write_text_clipboard as _restore_clipboard,
+)
 from contextual_intelligence.models import CaptureError, CaptureTier, ContextPayload
 
 log = logging.getLogger(__name__)
@@ -98,35 +100,6 @@ def _send_inputs(inputs: list[INPUT]) -> None:
         )
 
 
-def _has_non_text_format() -> bool:
-    """Check if the clipboard holds high-value non-text formats to avoid clobbering."""
-    NON_TEXT_FORMATS = {
-        win32con.CF_BITMAP,
-        win32con.CF_DIB,
-        win32con.CF_DIBV5,
-        win32con.CF_HDROP,
-        win32con.CF_WAVE,
-        win32con.CF_RIFF,
-    }
-    for _ in range(5):
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                fmt = 0
-                while True:
-                    fmt = win32clipboard.EnumClipboardFormats(fmt)
-                    if fmt == 0:
-                        break
-                    if fmt in NON_TEXT_FORMATS:
-                        return True
-                return False
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception:
-            time.sleep(0.02)
-    # Fail closed: if we cannot open the clipboard to inspect it after retries,
-    # assume it has non-text to prevent clobbering.
-    return True
 
 
 class ListenerState(StrEnum):
@@ -135,38 +108,6 @@ class ListenerState(StrEnum):
     CAPTURING = "capturing"
 
 
-def _save_clipboard() -> str | None:
-    for _ in range(5):
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                if win32clipboard.IsClipboardFormatAvailable(win32con.CF_UNICODETEXT):
-                    return win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
-                elif win32clipboard.IsClipboardFormatAvailable(win32con.CF_TEXT):
-                    data = win32clipboard.GetClipboardData(win32con.CF_TEXT)
-                    return data.decode("utf-8", errors="replace") if isinstance(data, bytes) else str(data)
-                return None
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception:
-            time.sleep(0.02)
-    return None
-
-
-def _restore_clipboard(text: str | None) -> None:
-    if text is None:
-        return
-    for _ in range(5):
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
-            finally:
-                win32clipboard.CloseClipboard()
-            return
-        except Exception:
-            time.sleep(0.02)
 
 
 def _clear_modifiers() -> None:

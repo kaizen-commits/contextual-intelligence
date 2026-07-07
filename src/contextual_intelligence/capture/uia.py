@@ -20,20 +20,43 @@ log = logging.getLogger(__name__)
 _ANCESTOR_SEARCH_DEPTH = 5
 
 
-def _process_image_name(pid: int) -> str:
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if not handle:
-        return ""
+def get_process_image_name(pid: int) -> str:
     try:
-        buf = ctypes.create_unicode_buffer(4096)
-        size = ctypes.c_ulong(len(buf))
-        if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
-            return buf.value.rsplit("\\", 1)[-1]
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(4096)
+            size = ctypes.c_ulong(len(buf))
+            if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                return buf.value.rsplit("\\", 1)[-1]
+            return ""
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception as exc:
+        log.debug("process image name lookup failed for pid %s: %s", pid, exc)
         return ""
-    finally:
-        kernel32.CloseHandle(handle)
+
+
+_process_image_name = get_process_image_name
+
+
+def get_foreground_app_name() -> str:
+    """Get the process image name of the current foreground window non-blockingly."""
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return ""
+        pid = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value:
+            return get_process_image_name(pid.value)
+    except Exception as exc:
+        log.debug("foreground app name capture failed: %s", exc)
+    return ""
 
 
 class UiaCaptureProvider:
@@ -79,7 +102,7 @@ class UiaCaptureProvider:
                 selected_text=selected,
                 before=before,
                 after=after,
-                app_name=_process_image_name(focused.ProcessId),
+                app_name=get_process_image_name(focused.ProcessId),
                 window_title=(top.Name if top else "") or "",
                 tier=CaptureTier.UIA,
             )
