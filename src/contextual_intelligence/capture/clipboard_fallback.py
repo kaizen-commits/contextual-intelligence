@@ -80,6 +80,12 @@ class INPUT(ctypes.Structure):
 
 INPUT_KEYBOARD = 1
 
+# Bound the fallback's whole-document context read. GetText(-1) on a large
+# document is an unbounded cross-process UIA call that can take seconds and
+# make the target app janky (especially Chromium/Electron hosts).
+_MAX_DOC_READ_CHARS = 20_000
+_MAX_CONTEXT_CHARS_PER_SIDE = 4_000
+
 
 def _send_inputs(inputs: list[INPUT]) -> None:
     n_inputs = len(inputs)
@@ -314,11 +320,16 @@ class ClipboardFallbackProvider:
                     if pattern:
                         doc_range = pattern.DocumentRange
                         if doc_range:
-                            full = doc_range.GetText(-1) or ""
+                            t_read = time.perf_counter()
+                            full = doc_range.GetText(_MAX_DOC_READ_CHARS) or ""
+                            log.debug(
+                                "fallback doc-range read %d chars in %.2fs",
+                                len(full), time.perf_counter() - t_read,
+                            )
                             idx = full.find(copied_text)
                             if idx >= 0:
-                                before = full[:idx]
-                                after = full[idx + len(copied_text):]
+                                before = full[:idx][-_MAX_CONTEXT_CHARS_PER_SIDE:]
+                                after = full[idx + len(copied_text):][:_MAX_CONTEXT_CHARS_PER_SIDE]
         except Exception as exc:
             log.debug("fallback document range context extraction failed: %s", exc)
 

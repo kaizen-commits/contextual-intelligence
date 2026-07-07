@@ -146,6 +146,7 @@ class LookupPopupWindow(QWidget):
     def start_lookup(self, worker: LookupWorker) -> None:
         if self._worker is not None and self._worker.isRunning():
             log.warning("Lookup already in progress, ignoring trigger")
+            worker.deleteLater()
             return
 
         if self._worker is not None:
@@ -181,7 +182,10 @@ class LookupPopupWindow(QWidget):
 
     def _position_near_cursor(self) -> None:
         pos = QCursor.pos()
-        screen = QGuiApplication.primaryScreen()
+        # screenAt, not primaryScreen: on multi-monitor layouts the cursor's
+        # screen may sit at negative virtual-desktop coordinates, and clamping
+        # against the primary screen throws the popup onto the wrong monitor.
+        screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
         if screen:
             geom = screen.availableGeometry()
             x = min(pos.x() + 15, geom.right() - self.width() - 10)
@@ -189,6 +193,19 @@ class LookupPopupWindow(QWidget):
             self.move(max(geom.left() + 10, x), max(geom.top() + 10, y))
         else:
             self.move(pos.x() + 15, pos.y() + 15)
+
+    def _clamp_to_screen(self) -> None:
+        """Keep the popup fully on its current screen after adjustSize growth."""
+        screen = (
+            QGuiApplication.screenAt(self.frameGeometry().center())
+            or QGuiApplication.primaryScreen()
+        )
+        if screen is None:
+            return
+        geom = screen.availableGeometry()
+        x = min(self.x(), geom.right() - self.width() - 10)
+        y = min(self.y(), geom.bottom() - self.height() - 10)
+        self.move(max(geom.left() + 10, x), max(geom.top() + 10, y))
 
     def _on_started(self) -> None:
         self._buffer = ""
@@ -199,19 +216,22 @@ class LookupPopupWindow(QWidget):
         self.status_label.setText("⏳ Analyzing context...")
         self.status_label.show()
         self.adjustSize()
+        self._clamp_to_screen()
 
     def _on_capture_succeeded(self, payload: ContextPayload) -> None:
         app = payload.app_name or "unknown app"
         self.status_label.setText(f"⏳ Defining '{payload.selected_text}' ({app})...")
         self.adjustSize()
+        self._clamp_to_screen()
 
     def _on_token(self, chunk: str) -> None:
-        if not self._buffer:
-            # Hide loading status once tokens start arriving
-            self.status_label.hide()
-
         self._buffer += chunk
         lines = [line.strip() for line in self._buffer.split("\n") if line.strip()]
+
+        # Hide loading status only once visible content has arrived; a
+        # whitespace-only stream must not blank the card.
+        if lines:
+            self.status_label.hide()
 
         if len(lines) >= 1:
             self.title_label.setText(lines[0])
@@ -227,10 +247,19 @@ class LookupPopupWindow(QWidget):
             self.syn_label.show()
 
         self.adjustSize()
+        self._clamp_to_screen()
 
     def _on_finished(self) -> None:
-        self.status_label.hide()
+        if self._buffer.strip():
+            self.status_label.hide()
+        else:
+            log.warning("lookup finished with empty model response")
+            self.status_label.setText(
+                "❌ Model returned an empty response — re-select the word and try again"
+            )
+            self.status_label.show()
         self.adjustSize()
+        self._clamp_to_screen()
 
     def _on_error(self, msg: str) -> None:
         self.title_label.hide()
@@ -240,6 +269,7 @@ class LookupPopupWindow(QWidget):
         self.status_label.setText(f"❌ {msg}")
         self.status_label.show()
         self.adjustSize()
+        self._clamp_to_screen()
 
     def keyPressEvent(self, event: Any) -> None:
         if event.key() == Qt.Key.Key_Escape:

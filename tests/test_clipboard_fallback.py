@@ -29,6 +29,8 @@ def test_clipboard_capture_success(monkeypatch):
         clipboard_state.append("newly copied selection")
         seq.append(101)
 
+    # Mocked so the test never depends on what the real clipboard holds
+    monkeypatch.setattr(clipboard_fallback, "_has_non_text_format", lambda: False)
     monkeypatch.setattr(clipboard_fallback, "_save_clipboard", mock_save)
     monkeypatch.setattr(clipboard_fallback, "_restore_clipboard", mock_restore)
     monkeypatch.setattr(clipboard_fallback, "_send_ctrl_c", mock_send_ctrl_c_with_seq)
@@ -46,6 +48,7 @@ def test_clipboard_capture_empty_raises_error(monkeypatch):
 
     restored = []
     seq = [100]
+    monkeypatch.setattr(clipboard_fallback, "_has_non_text_format", lambda: False)
     monkeypatch.setattr(clipboard_fallback, "_save_clipboard", lambda: "")
     monkeypatch.setattr(clipboard_fallback, "_restore_clipboard", lambda text: restored.append(text))
     monkeypatch.setattr(clipboard_fallback, "_send_ctrl_c", lambda: seq.append(101))
@@ -63,6 +66,7 @@ def test_clipboard_sequence_not_incrementing_raises_error(monkeypatch):
     provider.arm()
 
     restored = []
+    monkeypatch.setattr(clipboard_fallback, "_has_non_text_format", lambda: False)
     monkeypatch.setattr(clipboard_fallback, "_save_clipboard", lambda: "stale text")
     monkeypatch.setattr(clipboard_fallback, "_restore_clipboard", lambda text: restored.append(text))
     monkeypatch.setattr(clipboard_fallback, "_send_ctrl_c", lambda: None)

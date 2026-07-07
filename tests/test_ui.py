@@ -61,6 +61,29 @@ def test_popup_window_formatting(qapp):
     assert popup.syn_label.text() == "Synonyms: check, verify"
 
 
+def test_popup_empty_response_shows_message(qapp):
+    """A whitespace-only or empty model stream must not render a blank card."""
+    popup = LookupPopupWindow()
+
+    # Whitespace-only tokens must not hide the status label
+    popup._on_token("\n")
+    popup._on_token("  \n")
+    assert not popup.status_label.isHidden()
+    assert popup.title_label.isHidden()
+
+    popup._on_finished()
+    assert not popup.status_label.isHidden()
+    assert "empty response" in popup.status_label.text()
+
+
+def test_popup_finished_with_content_hides_status(qapp):
+    popup = LookupPopupWindow()
+    popup._on_token("test (noun)\nA simple test.")
+    popup._on_finished()
+    assert popup.status_label.isHidden()
+    assert not popup.title_label.isHidden()
+
+
 def test_popup_window_error_state(qapp):
     popup = LookupPopupWindow()
     popup._on_error("Capture failed: empty selection")
@@ -87,6 +110,49 @@ def test_lookup_worker_success(qapp):
         "token:world",
         "finished",
     ]
+
+
+class SequencedLlmClient:
+    """Returns a different response per stream_lookup call."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = 0
+
+    def stream_lookup(self, payload):
+        self.calls += 1
+        yield from self._responses.pop(0)
+
+
+def test_lookup_worker_retries_empty_response(qapp):
+    orch = MockOrchestrator()
+    llm = SequencedLlmClient([["\n", "  "], ["word (noun)\n", "A definition."]])
+    worker = LookupWorker(orch, llm)
+
+    tokens = []
+    finished = []
+    worker.token_received.connect(tokens.append)
+    worker.finished_lookup.connect(lambda: finished.append(True))
+
+    worker.run()
+    assert llm.calls == 2
+    assert "word (noun)" in "".join(tokens)
+    assert finished
+
+
+def test_lookup_worker_gives_up_after_retry(qapp):
+    orch = MockOrchestrator()
+    llm = SequencedLlmClient([["\n"], ["  "]])
+    worker = LookupWorker(orch, llm)
+
+    finished = []
+    worker.finished_lookup.connect(lambda: finished.append(True))
+
+    worker.run()
+    # Retried once, then finished normally — the popup's empty-buffer
+    # guard is what surfaces the error to the user.
+    assert llm.calls == 2
+    assert finished
 
 
 def test_lookup_worker_capture_error(qapp):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from PySide6.QtCore import QThread, Signal
@@ -13,6 +14,10 @@ from contextual_intelligence.llm import LlmClient
 from contextual_intelligence.models import CaptureError
 
 log = logging.getLogger(__name__)
+
+# gemma-4 occasionally streams an empty/whitespace-only response and an
+# immediate retry succeeds; retry once before surfacing the error card.
+_EMPTY_RESPONSE_RETRIES = 1
 
 
 class LookupWorker(QThread):
@@ -41,12 +46,13 @@ class LookupWorker(QThread):
 
     def run(self) -> None:
         self._cancelled = False
+        t_start = time.perf_counter()
         self.started_capture.emit()
 
         try:
             payload = self._orchestrator.capture()
         except CaptureError as exc:
-            log.warning("capture failed: %s", exc)
+            log.warning("capture failed after %.2fs: %s", time.perf_counter() - t_start, exc)
             self.error_occurred.emit(f"Capture failed: {exc.reason}")
             return
         except Exception as exc:
@@ -54,16 +60,34 @@ class LookupWorker(QThread):
             self.error_occurred.emit(f"Unexpected error: {exc}")
             return
 
+        t_captured = time.perf_counter()
         if self._cancelled:
             return
 
         self.capture_succeeded.emit(payload)
 
+        t_first_token: float | None = None
+        n_chars = 0
+        attempt = 0
         try:
-            for chunk in self._llm_client.stream_lookup(payload):
-                if self._cancelled:
+            while True:
+                attempt += 1
+                got_visible = False
+                for chunk in self._llm_client.stream_lookup(payload):
+                    if t_first_token is None:
+                        t_first_token = time.perf_counter()
+                    if self._cancelled:
+                        break
+                    n_chars += len(chunk)
+                    if chunk.strip():
+                        got_visible = True
+                    self.token_received.emit(chunk)
+                if got_visible or self._cancelled or attempt > _EMPTY_RESPONSE_RETRIES:
                     break
-                self.token_received.emit(chunk)
+                log.warning(
+                    "model returned empty response, retrying (attempt %d of %d)",
+                    attempt + 1, _EMPTY_RESPONSE_RETRIES + 1,
+                )
         except APIConnectionError:
             log.error("cannot reach LM Studio")
             self.error_occurred.emit(
@@ -76,5 +100,19 @@ class LookupWorker(QThread):
             self.error_occurred.emit(f"LM Studio error: {exc}")
             return
 
+        t_end = time.perf_counter()
+        log.info(
+            "lookup lifecycle: tier=%s app=%s chars=%d capture=%.2fs first_token=+%.2fs "
+            "stream=%.2fs total=%.2fs%s",
+            payload.tier,
+            payload.app_name or "?",
+            n_chars,
+            t_captured - t_start,
+            (t_first_token - t_captured) if t_first_token is not None else -1.0,
+            (t_end - t_first_token) if t_first_token is not None else 0.0,
+            t_end - t_start,
+            (f" attempts={attempt}" if attempt > 1 else "")
+            + (" (cancelled)" if self._cancelled else ""),
+        )
         if not self._cancelled:
             self.finished_lookup.emit()
