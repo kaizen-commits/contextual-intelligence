@@ -269,15 +269,26 @@ class PastePaletteWindow(QWidget):
         if self.instruction_input.isEnabled():
             self.instruction_input.setFocus()
 
+    def _cleanup_worker(self) -> None:
+        if self._worker is not None:
+            try:
+                self._worker.disconnect(self)
+            except Exception:
+                pass
+            if self._worker.isFinished():
+                self._worker.deleteLater()
+            else:
+                self._worker.finished.connect(self._worker.deleteLater)
+            self._worker = None
+
     def cancel_worker(self, timeout_ms: int = 2000) -> bool:
+        res = True
         if self._worker is not None and self._worker.isRunning():
             log.info("cancelling active paste worker thread")
             self._worker.cancel()
             res = self._worker.wait(timeout_ms)
-            self._worker = None
-            return res
-        self._worker = None
-        return True
+        self._cleanup_worker()
+        return res
 
     def _on_submit(self) -> None:
         instruction = self.instruction_input.text().strip()
@@ -303,7 +314,7 @@ class PastePaletteWindow(QWidget):
             return
 
         self._current_payload = payload
-        worker = PasteWorker(payload, self._llm_client)
+        worker = PasteWorker(payload, self._llm_client, parent=self)
         worker.started_transform.connect(self._on_started)
         worker.retrying_transform.connect(self._on_retrying)
         worker.token_received.connect(self._on_token)

@@ -245,3 +245,41 @@ def test_history_ring_cycling(qapp, monkeypatch):
     palette.keyPressEvent(ev_down)
     assert palette.instruction_input.text() == ""
     palette.close()
+
+
+def test_worker_signal_disconnection_and_cleanup(qapp, monkeypatch):
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.palette.has_high_value_non_text_format",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.palette.read_text_clipboard",
+        lambda: "hello world",
+    )
+    settings = Settings()
+    llm = MockLlmClient(["RESULT TEXT"])
+    palette = PastePaletteWindow(settings, llm)
+    palette.open_palette("notepad.exe")
+
+    palette.instruction_input.setText("summarize")
+    palette._on_submit()
+    old_worker = palette._worker
+    assert old_worker is not None
+
+    # Wait for old_worker to complete
+    old_worker.wait(2000)
+    qapp.processEvents()
+
+    # Now cancel/cleanup worker (simulated by cancelling)
+    palette.cancel_worker()
+    assert palette._worker is None
+
+    # Emitting a signal from old_worker after cleanup must NOT affect the UI
+    old_worker.token_received.emit("zombie token")
+    old_worker.error_occurred.emit("zombie error")
+    qapp.processEvents()
+
+    # The preview edit and status label should not have been updated by zombie signals
+    assert "zombie token" not in palette.preview_edit.toPlainText()
+    assert "zombie error" not in palette.status_label.text()
+    palette.close()
