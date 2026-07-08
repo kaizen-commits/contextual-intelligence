@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 # A "selection" is a word, short phrase, or sentence/passage.
 MAX_SELECTION_CHARS = 1000
+MAX_LOOKUP_CHARS = 150
 MAX_PASTE_INPUT_CHARS = 8000
 # Control characters other than tab/newline signal a broken capture.
 MAX_CONTROL_CHAR_RATIO = 0.05

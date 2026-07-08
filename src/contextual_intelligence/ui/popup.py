@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from contextual_intelligence.models import ContextPayload
+from contextual_intelligence.models import ContextPayload, MAX_LOOKUP_CHARS
 from contextual_intelligence.ui.positioning import clamp_to_screen, position_near_cursor
 from contextual_intelligence.ui.worker import LookupWorker
 
@@ -247,16 +247,16 @@ class LookupPopupWindow(QWidget):
             self.status_label.hide()
         else:
             log.warning("lookup finished with empty model response")
-            if self._selected_chars_len > 150:
+            if self._selected_chars_len > MAX_LOOKUP_CHARS:
                 msg = (
-                    f"❌ Model returned an empty response. You selected {self._selected_chars_len:,} chars — "
-                    "Contextual Lookup is optimized for individual words or short phrases (up to 1,000 chars). "
+                    f"❌ You selected {self._selected_chars_len:,} chars — "
+                    f"Contextual Lookup is designed for individual words or short phrases (up to {MAX_LOOKUP_CHARS} chars). "
                     "For summarizing or rewriting paragraphs, please use Smart Paste (Ctrl+Alt+V)."
                 )
             else:
                 msg = (
                     "❌ Model returned an empty response. Contextual Lookup is designed for words and short phrases "
-                    "(up to 1,000 chars). Please re-select a specific term and try again."
+                    f"(up to {MAX_LOOKUP_CHARS} chars). Please re-select a specific term and try again."
                 )
             self.status_label.setText(msg)
             self.status_label.show()

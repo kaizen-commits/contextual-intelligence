@@ -11,7 +11,7 @@ from openai import APIConnectionError
 
 from contextual_intelligence.capture import CaptureOrchestrator
 from contextual_intelligence.llm import LlmClient
-from contextual_intelligence.models import CaptureError
+from contextual_intelligence.models import CaptureError, MAX_LOOKUP_CHARS
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +65,15 @@ class LookupWorker(QThread):
             return
 
         self.capture_succeeded.emit(payload)
+
+        if len(payload.selected_text) > MAX_LOOKUP_CHARS:
+            log.info(
+                "selection exceeds MAX_LOOKUP_CHARS (%d > %d); skipping LLM lookup and displaying limitation",
+                len(payload.selected_text),
+                MAX_LOOKUP_CHARS,
+            )
+            self.finished_lookup.emit()
+            return
 
         t_first_token: float | None = None
         n_chars = 0

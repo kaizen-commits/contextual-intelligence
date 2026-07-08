@@ -80,7 +80,7 @@ def test_popup_empty_response_informative_guidance(qapp):
     popup_short = LookupPopupWindow()
     popup_short._on_capture_succeeded(ContextPayload(selected_text="short word", tier=CaptureTier.UIA, app_name="test"))
     popup_short._on_finished()
-    assert "up to 1,000 chars" in popup_short.status_label.text()
+    assert "up to 150 chars" in popup_short.status_label.text()
     assert "re-select a specific term" in popup_short.status_label.text()
 
     popup_long = LookupPopupWindow()
@@ -230,3 +230,25 @@ def test_popup_rapid_double_trigger(qapp):
     # Clean up
     worker1.cancel()
     worker1.wait()
+
+
+def test_lookup_worker_skips_llm_on_oversized_selection(qapp):
+    class SpyLlmClient(MockLlmClient):
+        def __init__(self):
+            super().__init__()
+            self.called = False
+
+        def stream_lookup(self, payload):
+            self.called = True
+            yield from super().stream_lookup(payload)
+
+    orch = MockOrchestrator(payload=ContextPayload(selected_text="x" * 200, tier=CaptureTier.UIA, app_name="test"))
+    llm = SpyLlmClient()
+    worker = LookupWorker(orch, llm)
+
+    finished = []
+    worker.finished_lookup.connect(lambda: finished.append(True))
+    worker.run()
+
+    assert not llm.called
+    assert len(finished) == 1
