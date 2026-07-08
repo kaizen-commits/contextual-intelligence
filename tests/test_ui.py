@@ -301,6 +301,24 @@ def test_lookup_worker_prefer_flag_falls_back_to_capture(qapp, monkeypatch):
     assert orch.calls == 1
 
 
+def test_lookup_worker_invalid_recent_copy_validation_is_sanitized(qapp, monkeypatch, caplog):
+    secret = "PRIVATE_RECENT_COPY_DETAIL"
+    invalid_text = f"{secret}�"
+    monkeypatch.setattr("contextual_intelligence.ui.worker.read_text_clipboard", lambda: invalid_text)
+    orch = SpyOrchestrator()  # captures "word" after rejecting the invalid handoff
+    recent = RecentAppCopy(text=invalid_text, copied_at=time.monotonic(), source="smart_paste")
+    worker = LookupWorker(
+        orch, MockLlmClient(), recent_copy=recent, prefer_recent_copy=True
+    )
+
+    captured = []
+    worker.capture_succeeded.connect(lambda p: captured.append(p.selected_text))
+    worker.run()
+
+    assert captured == ["word"]
+    assert secret not in caplog.text
+
+
 def test_lookup_worker_recent_copy_stale_rejected(qapp, monkeypatch):
     monkeypatch.setattr("contextual_intelligence.ui.worker.read_text_clipboard", lambda: "gadget")
     orch = MockOrchestrator(error=CaptureError("no selection", CaptureTier.UIA))
@@ -391,3 +409,30 @@ def test_lookup_worker_skips_llm_on_oversized_selection(qapp):
 
     assert not llm.called
     assert len(finished) == 1
+
+
+def test_lookup_worker_unexpected_capture_error_is_sanitized(qapp, caplog):
+    secret = "PRIVATE_CAPTURE_DETAIL"
+    orch = MockOrchestrator(error=RuntimeError(secret))
+    worker = LookupWorker(orch, MockLlmClient())
+
+    errors = []
+    worker.error_occurred.connect(errors.append)
+    worker.run()
+
+    assert errors == ["Lookup failed during capture. Try selecting the text again or restarting the app."]
+    assert secret not in errors[0]
+    assert secret not in caplog.text
+
+
+def test_lookup_worker_llm_error_is_sanitized(qapp, caplog):
+    secret = "PRIVATE_LLM_DETAIL"
+    worker = LookupWorker(MockOrchestrator(), MockLlmClient(error=RuntimeError(secret)))
+
+    errors = []
+    worker.error_occurred.connect(errors.append)
+    worker.run()
+
+    assert errors == ["The local model returned an error. Check LM Studio and try again."]
+    assert secret not in errors[0]
+    assert secret not in caplog.text

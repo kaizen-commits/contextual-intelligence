@@ -345,8 +345,11 @@ class PastePaletteWindow(QWidget):
                 instruction=instruction,
                 app_name=self._source_app,
             )
-        except Exception as exc:
-            self.status_label.setText(f"❌ Invalid request: {exc}")
+        except Exception:
+            log.info("invalid Smart Paste request")
+            self.status_label.setText(
+                "❌ Cannot transform this clipboard text. Try a shorter plain-text selection."
+            )
             return
 
         self._current_payload = payload

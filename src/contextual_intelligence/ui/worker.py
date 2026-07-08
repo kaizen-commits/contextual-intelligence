@@ -32,6 +32,8 @@ _CAPTURE_FAILED_GUIDANCE = (
     "Lookup needs an active selection. Select a word, or copy a short "
     "word/phrase from the Smart Paste result and try again."
 )
+_CAPTURE_UNEXPECTED_GUIDANCE = "Lookup failed during capture. Try selecting the text again or restarting the app."
+_MODEL_ERROR_GUIDANCE = "The local model returned an error. Check LM Studio and try again."
 
 
 class LookupWorker(QThread):
@@ -88,8 +90,8 @@ class LookupWorker(QThread):
                 app_name="Smart Paste result",
                 tier=CaptureTier.CLIPBOARD,
             )
-        except ValidationError as exc:
-            log.info("recent %s copy failed payload validation: %s", rc.source, exc)
+        except ValidationError:
+            log.info("recent %s copy failed payload validation", rc.source)
             return None
 
     def run(self) -> None:
@@ -119,9 +121,9 @@ class LookupWorker(QThread):
                     "all capture tiers failed; using recent Smart Paste copy handoff (%d chars)",
                     len(payload.selected_text),
                 )
-            except Exception as exc:
-                log.exception("unexpected error during capture")
-                self.error_occurred.emit(f"Unexpected error: {exc}")
+            except Exception:
+                log.error("unexpected error during capture")
+                self.error_occurred.emit(_CAPTURE_UNEXPECTED_GUIDANCE)
                 return
 
         t_captured = time.perf_counter()
@@ -168,9 +170,9 @@ class LookupWorker(QThread):
                 "(Check Developer tab -> Start Server)"
             )
             return
-        except Exception as exc:
-            log.exception("error during LLM streaming")
-            self.error_occurred.emit(f"LM Studio error: {exc}")
+        except Exception:
+            log.error("error during LLM streaming")
+            self.error_occurred.emit(_MODEL_ERROR_GUIDANCE)
             return
 
         t_end = time.perf_counter()

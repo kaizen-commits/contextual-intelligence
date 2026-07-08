@@ -405,3 +405,18 @@ def test_palette_preview_ctrl_c_emits_copied_signal(qapp):
     assert emitted == ["gadget"]
     assert handled is False  # QTextEdit still performs the actual copy
     palette.close()
+
+
+def test_submit_validation_error_is_sanitized(qapp, caplog):
+    palette = PastePaletteWindow(Settings(), MockLlmClient())
+    secret = "PRIVATE_CLIPBOARD_DETAIL"
+    palette._clipboard_text = secret * 400
+    palette.instruction_input.setText("summarize")
+
+    palette._on_submit()
+
+    assert "Invalid request" not in palette.status_label.text()
+    assert secret not in palette.status_label.text()
+    assert secret not in caplog.text
+    assert "Cannot transform this clipboard text" in palette.status_label.text()
+    palette.close()

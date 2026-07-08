@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from contextual_intelligence.capture import CaptureOrchestrator
 from contextual_intelligence.models import CaptureError, CaptureTier, ContextPayload
@@ -76,4 +77,27 @@ def test_catches_validation_error_and_falls_through():
     result = orch.capture()
     assert result.selected_text == "word"
     assert [a.ok for a in orch.last_attempts] == [False, True]
-    assert "validation error" in (orch.last_attempts[0].error or "")
+    assert orch.last_attempts[0].error == "validation error"
+
+
+def test_validation_error_reason_does_not_include_capture_content(caplog):
+    secret = "PRIVATE_SELECTED_TEXT"
+
+    class InvalidSensitive:
+        name = "invalid"
+
+        def capture(self):
+            try:
+                ContextPayload(selected_text=secret, before="�", tier=CaptureTier.UIA)
+            except ValidationError as exc:
+                raise exc
+            raise AssertionError("expected validation error")
+
+    orch = CaptureOrchestrator([InvalidSensitive()])
+    with pytest.raises(CaptureError):
+        orch.capture()
+
+    assert len(orch.last_attempts) == 1
+    assert orch.last_attempts[0].error == "validation error"
+    assert secret not in caplog.text
+    assert secret not in str(orch.last_attempts[0].error)

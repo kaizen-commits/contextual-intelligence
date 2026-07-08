@@ -8,19 +8,21 @@ Contextual Intelligence is currently a run-from-source developer preview. Securi
 
 Contextual Intelligence can read selected text and clipboard text when a user triggers a workflow. By default, text is sent only to the configured OpenAI-compatible endpoint, typically LM Studio on the same machine.
 
-If you configure the endpoint to use another machine or a cloud service, selected or copied text will be sent to that endpoint. Treat the configured endpoint as trusted infrastructure.
+If you configure the endpoint to use another machine or a cloud service, selected or copied text will be sent to that endpoint. Treat the configured endpoint as trusted infrastructure. Non-local `http://` endpoints are rejected; keep HTTP endpoints on `localhost`/`127.0.0.1` or use `https://` for remote endpoints.
 
-The app should not persist clipboard history or selected text to disk. Diagnostic logs should describe capture tier, timing, and failure reasons rather than storing user content.
+The app should not persist clipboard history or selected text to disk. Diagnostic logs should describe capture tier, timing, and failure categories rather than storing user content.
 
 ## Reporting vulnerabilities
 
-Please report security issues privately instead of opening a public issue with exploit details. If this repository does not yet list a dedicated security contact, contact the maintainer through their GitHub profile and include:
+Please report security issues privately instead of opening a public issue with exploit details. Use GitHub's private vulnerability reporting / private security advisory flow for this repository if available. If private advisories are not enabled yet, contact the maintainer through their GitHub profile and include:
 
 - affected version or commit
 - operating system and app/runtime context
 - reproduction steps
 - expected impact
 - whether sensitive text, clipboard data, logs, or endpoint configuration are involved
+
+Expected response target: acknowledgement within 7 days where practical, followed by private coordination until a fix or disclosure decision is ready.
 
 ## Scope examples
 

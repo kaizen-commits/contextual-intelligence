@@ -62,12 +62,19 @@ class CaptureOrchestrator:
             start = time.perf_counter()
             try:
                 payload = provider.capture()
-            except (CaptureError, ValidationError) as exc:
+            except CaptureError as exc:
                 ms = (time.perf_counter() - start) * 1000
-                reason = exc.reason if isinstance(exc, CaptureError) else f"validation error: {exc}"
+                reason = exc.reason
                 self.last_attempts.append(CaptureAttempt(provider.name, False, ms, reason))
                 log.info("capture tier=%s ok=False ms=%.0f reason=%s", provider.name, ms, reason)
                 continue
+            except ValidationError:
+                ms = (time.perf_counter() - start) * 1000
+                reason = "validation error"
+                self.last_attempts.append(CaptureAttempt(provider.name, False, ms, reason))
+                log.info("capture tier=%s ok=False ms=%.0f reason=%s", provider.name, ms, reason)
+                continue
+
             ms = (time.perf_counter() - start) * 1000
             self.last_attempts.append(CaptureAttempt(provider.name, True, ms))
             log.info(

@@ -101,3 +101,17 @@ def test_paste_worker_cancellation(qapp):
     worker.run()
     assert len(tokens) == 2
     assert len(finished) == 0
+
+
+def test_paste_worker_llm_error_is_sanitized(qapp, caplog):
+    secret = "PRIVATE_PASTE_DETAIL"
+    payload = PastePayload(text="hello", instruction="upper")
+    worker = PasteWorker(payload, MockLlmClient(error=RuntimeError(secret)))
+
+    errors = []
+    worker.error_occurred.connect(errors.append)
+    worker.run()
+
+    assert errors == ["The local model returned an error. Check LM Studio and try again."]
+    assert secret not in errors[0]
+    assert secret not in caplog.text

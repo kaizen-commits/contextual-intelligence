@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 # gemma-4 occasionally streams an empty/whitespace-only response and an
 # immediate retry succeeds; retry once before surfacing the error.
 _EMPTY_RESPONSE_RETRIES = 1
+_MODEL_ERROR_GUIDANCE = "The local model returned an error. Check LM Studio and try again."
 
 
 class PasteWorker(QThread):
@@ -79,9 +80,9 @@ class PasteWorker(QThread):
                 "(Check Developer tab -> Start Server)"
             )
             return
-        except Exception as exc:
-            log.exception("error during LLM streaming")
-            self.error_occurred.emit(f"LM Studio error: {exc}")
+        except Exception:
+            log.error("error during LLM streaming")
+            self.error_occurred.emit(_MODEL_ERROR_GUIDANCE)
             return
 
         t_end = time.perf_counter()

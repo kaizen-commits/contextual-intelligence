@@ -1,3 +1,5 @@
+import pytest
+
 from contextual_intelligence.config import Settings, load_dotenv, load_settings
 
 
@@ -59,3 +61,17 @@ def test_paste_env_overrides(tmp_path, monkeypatch):
     assert s.paste_hotkey_vk == 88
     assert s.max_paste_input_chars == 5000
     assert s.max_paste_output_tokens == 250
+
+
+def test_allows_local_http_endpoints():
+    assert Settings(base_url="http://localhost:1234/v1").base_url == "http://localhost:1234/v1"
+    assert Settings(base_url="http://127.0.0.1:1234/v1").base_url == "http://127.0.0.1:1234/v1"
+
+
+def test_rejects_remote_http_endpoint():
+    with pytest.raises(ValueError, match="HTTPS is required for non-local endpoints"):
+        Settings(base_url="http://llm.example.test/v1")
+
+
+def test_allows_remote_https_endpoint():
+    assert Settings(base_url="https://llm.example.test/v1").base_url == "https://llm.example.test/v1"

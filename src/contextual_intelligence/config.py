@@ -9,8 +9,9 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
+from urllib.parse import urlparse
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # env var -> Settings field
 _ENV_OVERRIDES = {
@@ -52,6 +53,20 @@ class Settings(BaseModel):
     max_paste_output_tokens: int = 4096
     request_timeout_s: float = 30.0
     log_level: str = "INFO"
+
+    @field_validator("base_url")
+    @classmethod
+    def _require_tls_for_remote_http(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if parsed.scheme != "http":
+            return value
+        host = (parsed.hostname or "").lower()
+        if host in {"localhost", "127.0.0.1", "::1"}:
+            return value
+        raise ValueError(
+            "HTTPS is required for non-local endpoints; use localhost/127.0.0.1 for local "
+            "HTTP LM Studio or configure an https:// endpoint."
+        )
 
 
 def default_config_path() -> Path:

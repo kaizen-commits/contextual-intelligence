@@ -47,7 +47,23 @@ Contextual Intelligence is local-first by default.
 - Logs are intended for capture tier, timing, and failure diagnostics, not content storage.
 
 If you configure LM Studio or another OpenAI-compatible endpoint on another
-machine, selected or copied text will be sent to that endpoint.
+machine, selected or copied text will be sent to that endpoint. Non-local
+`http://` endpoints are rejected; use the default local HTTP endpoint or an
+`https://` remote endpoint.
+
+## Demo
+
+Contextual Lookup explains a selected term in place:
+
+![Contextual Lookup popup](docs/assets/contextual-lookup.png)
+
+Smart Paste transforms copied text through a preview-first palette:
+
+<video src="docs/assets/smart-paste-demo.mp4" controls></video>
+
+> GitHub's rendering of repository-local videos can vary. If the video does not
+> render in the README, open [`docs/assets/smart-paste-demo.mp4`](docs/assets/smart-paste-demo.mp4)
+> directly.
 
 ## Requirements
 
@@ -140,6 +156,14 @@ failure reason so fallback work is driven by telemetry, not guesses.
 ## Security notes
 
 See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and endpoint trust notes.
+
+## Third-party licensing
+
+The project currently runs from source. If installers or binary bundles are
+published later, include third-party license notices for runtime dependencies,
+especially PySide6 / Qt. PySide6 is available under LGPL/GPL terms; binary
+packaging must preserve the applicable Qt notices and dynamic-linking/compliance
+requirements.
 
 ## Development credits
 
