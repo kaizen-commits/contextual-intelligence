@@ -5,9 +5,10 @@ def test_defaults():
     s = Settings()
     assert s.base_url == "http://localhost:1234/v1"
     assert s.context_chars_per_side == 1500
+    assert s.max_answer_tokens == 1024
     assert s.paste_hotkey_vk == 0x56
     assert s.max_paste_input_chars == 8000
-    assert s.max_paste_output_tokens == 1000
+    assert s.max_paste_output_tokens == 4096
 
 
 def test_load_dotenv_parses_and_respects_existing(tmp_path, monkeypatch):

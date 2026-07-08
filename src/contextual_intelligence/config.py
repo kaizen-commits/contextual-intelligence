@@ -46,10 +46,10 @@ class Settings(BaseModel):
     # Context captured either side of the selection, and the cap sent to the model.
     context_chars_per_side: int = 1500
     max_prompt_context_chars: int = 1500
-    max_answer_tokens: int = 300
+    max_answer_tokens: int = 1024
     paste_hotkey_vk: int = 0x56  # ord('V')
     max_paste_input_chars: int = 8000
-    max_paste_output_tokens: int = 1000
+    max_paste_output_tokens: int = 4096
     request_timeout_s: float = 30.0
     log_level: str = "INFO"
 
