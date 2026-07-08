@@ -4,10 +4,37 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtGui import QCursor, QGuiApplication
+from PySide6.QtCore import QPoint
+from PySide6.QtGui import QCursor, QGuiApplication, QScreen
 from PySide6.QtWidgets import QWidget
 
 log = logging.getLogger(__name__)
+
+
+def _get_screen_for_point(pos: QPoint) -> QScreen | None:
+    """Find the screen containing `pos`, falling back to the closest screen if `screenAt` returns None."""
+    screen = QGuiApplication.screenAt(pos)
+    if screen is not None:
+        return screen
+
+    screens = QGuiApplication.screens()
+    if not screens:
+        return QGuiApplication.primaryScreen()
+
+    # In multi-monitor Windows setups with mixed DPI scaling or negative coordinates,
+    # screenAt(pos) can return None due to coordinate rounding gaps or boundary mismatches.
+    # Find the closest screen by distance instead of blindly jumping to primaryScreen().
+    best_screen = screens[0]
+    min_dist_sq = float("inf")
+    for s in screens:
+        geom = s.geometry()
+        dx = max(geom.left() - pos.x(), 0, pos.x() - geom.right())
+        dy = max(geom.top() - pos.y(), 0, pos.y() - geom.bottom())
+        dist_sq = dx * dx + dy * dy
+        if dist_sq < min_dist_sq:
+            min_dist_sq = dist_sq
+            best_screen = s
+    return best_screen
 
 
 def position_near_cursor(
@@ -15,12 +42,12 @@ def position_near_cursor(
 ) -> None:
     """Position a widget near the mouse cursor on the screen containing the cursor.
 
-    Using screenAt rather than primaryScreen ensures that on multi-monitor layouts
-    where secondary monitors sit at negative virtual coordinates, the widget is
-    positioned and clamped against the correct screen boundaries.
+    Using _get_screen_for_point ensures that on multi-monitor layouts where secondary
+    monitors sit at negative virtual coordinates or use mixed DPI scaling, the widget is
+    positioned and clamped against the correct screen boundaries instead of jumping to the main monitor.
     """
     pos = QCursor.pos()
-    screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
+    screen = _get_screen_for_point(pos)
     if screen:
         geom = screen.availableGeometry()
         x = min(pos.x() + offset_x, geom.right() - widget.width() - margin)
@@ -35,10 +62,7 @@ def clamp_to_screen(widget: QWidget, margin: int = 10) -> None:
 
     Useful after adjustSize() or dynamic content growth.
     """
-    screen = (
-        QGuiApplication.screenAt(widget.frameGeometry().center())
-        or QGuiApplication.primaryScreen()
-    )
+    screen = _get_screen_for_point(widget.frameGeometry().center())
     if screen is None:
         return
     geom = screen.availableGeometry()

@@ -20,6 +20,19 @@ def test_position_near_cursor(qapp):
     assert widget.x() >= 0 or widget.y() >= 0 or True  # Multi-monitor can have negative coords
 
 
+def test_get_screen_for_point_fallback(qapp):
+    from PySide6.QtCore import QPoint
+    from contextual_intelligence.ui.positioning import _get_screen_for_point
+
+    # Test point on primary screen or origin
+    screen = _get_screen_for_point(QPoint(0, 0))
+    assert screen is not None
+
+    # Test point far outside any physical screen to verify closest-screen fallback
+    screen_far = _get_screen_for_point(QPoint(-1000000, -1000000))
+    assert screen_far is not None
+
+
 def test_clamp_to_screen(qapp):
     widget = QWidget()
     widget.resize(200, 100)
