@@ -50,11 +50,16 @@ class LookupWorker(QThread):
         llm_client: LlmClient,
         parent: Any | None = None,
         recent_copy: RecentAppCopy | None = None,
+        prefer_recent_copy: bool = False,
     ) -> None:
         super().__init__(parent)
         self._orchestrator = orchestrator
         self._llm_client = llm_client
         self._recent_copy = recent_copy
+        # When lookup is triggered while the palette is visible, the source
+        # app's leftover selection is stale — a valid in-app copy wins over
+        # capture instead of only backstopping its failure (SCOPE-30 QA).
+        self._prefer_recent_copy = prefer_recent_copy
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -92,22 +97,32 @@ class LookupWorker(QThread):
         t_start = time.perf_counter()
         self.started_capture.emit()
 
-        try:
-            payload = self._orchestrator.capture()
-        except CaptureError as exc:
-            log.warning("capture failed after %.2fs: %s", time.perf_counter() - t_start, exc)
+        payload = None
+        if self._prefer_recent_copy:
             payload = self._recent_copy_payload()
-            if payload is None:
-                self.error_occurred.emit(_CAPTURE_FAILED_GUIDANCE)
+            if payload is not None:
+                log.info(
+                    "lookup triggered from palette; using recent Smart Paste copy directly (%d chars)",
+                    len(payload.selected_text),
+                )
+
+        if payload is None:
+            try:
+                payload = self._orchestrator.capture()
+            except CaptureError as exc:
+                log.warning("capture failed after %.2fs: %s", time.perf_counter() - t_start, exc)
+                payload = self._recent_copy_payload()
+                if payload is None:
+                    self.error_occurred.emit(_CAPTURE_FAILED_GUIDANCE)
+                    return
+                log.info(
+                    "all capture tiers failed; using recent Smart Paste copy handoff (%d chars)",
+                    len(payload.selected_text),
+                )
+            except Exception as exc:
+                log.exception("unexpected error during capture")
+                self.error_occurred.emit(f"Unexpected error: {exc}")
                 return
-            log.info(
-                "all capture tiers failed; using recent Smart Paste copy handoff (%d chars)",
-                len(payload.selected_text),
-            )
-        except Exception as exc:
-            log.exception("unexpected error during capture")
-            self.error_occurred.emit(f"Unexpected error: {exc}")
-            return
 
         t_captured = time.perf_counter()
         if self._cancelled:

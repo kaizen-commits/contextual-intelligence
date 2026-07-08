@@ -187,7 +187,8 @@ class TrayApplication(QObject):
     def trigger_lookup(self) -> None:
         log.info("triggering contextual lookup")
         delay_ms = 0
-        if self.paste_palette.isVisible():
+        palette_was_visible = self.paste_palette.isVisible()
+        if palette_was_visible:
             log.info("closing open Smart Paste palette before triggering lookup")
             self.paste_palette.close()
             delay_ms = 150  # Allow Windows OS time to restore foreground focus to the target app
@@ -198,6 +199,9 @@ class TrayApplication(QObject):
                 self.llm_client,
                 parent=self,
                 recent_copy=self._recent_app_copy,
+                # Looking up from the palette: the source app's leftover
+                # selection is stale, so a valid palette copy takes priority.
+                prefer_recent_copy=palette_was_visible,
             )
             self.popup.start_lookup(worker)
 

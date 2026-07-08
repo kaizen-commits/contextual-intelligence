@@ -106,3 +106,21 @@ def test_tray_records_only_short_palette_copies(qapp, monkeypatch):
 
     tray.quit()
 
+
+def test_tray_lookup_from_palette_prefers_recent_copy(qapp, monkeypatch):
+    """Lookup triggered while the palette is visible sets prefer_recent_copy (SCOPE-30 QA)."""
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.start", lambda self, hm: None)
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: None)
+    monkeypatch.setattr("PySide6.QtCore.QTimer.singleShot", lambda delay, cb: cb())
+
+    tray = TrayApplication(Settings(), MagicMock(), MagicMock())
+    workers = []
+    monkeypatch.setattr(tray.popup, "start_lookup", lambda w: workers.append(w))
+
+    tray.trigger_lookup()  # palette hidden -> strict selection-first
+    tray.paste_palette.show()
+    tray.trigger_lookup()  # palette visible -> palette copy takes priority
+
+    assert [w._prefer_recent_copy for w in workers] == [False, True]
+    tray.quit()
+

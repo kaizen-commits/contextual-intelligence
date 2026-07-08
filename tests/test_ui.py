@@ -253,6 +253,54 @@ def test_lookup_worker_recent_copy_handoff(qapp, monkeypatch):
     assert not any(e.startswith("error") for e in events)
 
 
+class SpyOrchestrator(MockOrchestrator):
+    def __init__(self, payload=None, error=None):
+        super().__init__(payload=payload, error=error)
+        self.calls = 0
+
+    def capture(self):
+        self.calls += 1
+        return super().capture()
+
+
+def test_lookup_worker_prefers_recent_copy_over_stale_selection(qapp, monkeypatch):
+    """Lookup from the palette must use the palette copy, not the source app's
+    leftover selection (SCOPE-30 QA)."""
+    monkeypatch.setattr("contextual_intelligence.ui.worker.read_text_clipboard", lambda: "gadget")
+    # Capture would succeed with the stale source-app selection
+    orch = SpyOrchestrator(
+        payload=ContextPayload(selected_text="stale old selection", tier=CaptureTier.UIA)
+    )
+    recent = RecentAppCopy(text="gadget", copied_at=time.monotonic(), source="smart_paste")
+    worker = LookupWorker(
+        orch, MockLlmClient(), recent_copy=recent, prefer_recent_copy=True
+    )
+
+    captured = []
+    worker.capture_succeeded.connect(lambda p: captured.append(p.selected_text))
+    worker.run()
+    assert captured == ["gadget"]
+    assert orch.calls == 0  # capture never ran; palette copy took priority
+
+
+def test_lookup_worker_prefer_flag_falls_back_to_capture(qapp, monkeypatch):
+    """With no valid palette copy, the prefer flag must not bypass selection-first capture."""
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.worker.read_text_clipboard", lambda: "something else"
+    )
+    orch = SpyOrchestrator()  # captures "word"
+    recent = RecentAppCopy(text="gadget", copied_at=time.monotonic(), source="smart_paste")
+    worker = LookupWorker(
+        orch, MockLlmClient(), recent_copy=recent, prefer_recent_copy=True
+    )
+
+    captured = []
+    worker.capture_succeeded.connect(lambda p: captured.append(p.selected_text))
+    worker.run()
+    assert captured == ["word"]
+    assert orch.calls == 1
+
+
 def test_lookup_worker_recent_copy_stale_rejected(qapp, monkeypatch):
     monkeypatch.setattr("contextual_intelligence.ui.worker.read_text_clipboard", lambda: "gadget")
     orch = MockOrchestrator(error=CaptureError("no selection", CaptureTier.UIA))
