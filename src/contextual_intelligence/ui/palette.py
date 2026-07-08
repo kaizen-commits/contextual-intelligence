@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -150,6 +150,7 @@ class PastePaletteWindow(QWidget):
         self._current_payload: PastePayload | None = None
         self._current_duration_ms: float = 0.0
         self._history_idx: int = -1
+        self._drag_pos: QPoint | None = None
 
         self._setup_ui()
 
@@ -403,6 +404,20 @@ class PastePaletteWindow(QWidget):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def mousePressEvent(self, event: Any) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: Any) -> None:
+        if event.buttons() & Qt.MouseButton.LeftButton and self._drag_pos is not None:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
 
     def closeEvent(self, event: Any) -> None:
         self.cancel_worker()

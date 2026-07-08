@@ -1,6 +1,6 @@
 import pytest
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from contextual_intelligence.config import Settings
@@ -282,4 +282,36 @@ def test_worker_signal_disconnection_and_cleanup(qapp, monkeypatch):
     # The preview edit and status label should not have been updated by zombie signals
     assert "zombie token" not in palette.preview_edit.toPlainText()
     assert "zombie error" not in palette.status_label.text()
+    palette.close()
+
+
+def test_palette_dragging(qapp):
+    settings = Settings()
+    llm = MockLlmClient()
+    palette = PastePaletteWindow(settings, llm)
+    palette.show()
+    initial_pos = palette.pos()
+
+    press_ev = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(10, 10),
+        QPointF(initial_pos.x() + 10, initial_pos.y() + 10),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    palette.mousePressEvent(press_ev)
+    assert palette._drag_pos is not None
+
+    move_ev = QMouseEvent(
+        QMouseEvent.Type.MouseMove,
+        QPointF(60, 60),
+        QPointF(initial_pos.x() + 60, initial_pos.y() + 60),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    palette.mouseMoveEvent(move_ev)
+    assert palette.pos().x() == initial_pos.x() + 50
+    assert palette.pos().y() == initial_pos.y() + 50
     palette.close()
