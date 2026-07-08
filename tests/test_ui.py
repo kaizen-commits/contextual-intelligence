@@ -91,6 +91,20 @@ def test_popup_window_error_state(qapp):
     assert popup.title_label.isHidden()
 
 
+def test_popup_window_dimensions_and_truncation(qapp):
+    popup = LookupPopupWindow()
+    assert popup.maximumHeight() == 350
+    long_payload = ContextPayload(
+        selected_text="When it comes to the question of what your heart rate means, psychologically speaking, the scientifically correct answer is: it depends. " * 5,
+        tier=CaptureTier.UIA,
+        app_name="chrome.exe",
+    )
+    popup._on_capture_succeeded(long_payload)
+    assert len(popup.status_label.text()) < 150
+    assert "..." in popup.status_label.text()
+    assert popup.height() <= 350
+
+
 def test_lookup_worker_success(qapp):
     orch = MockOrchestrator()
     llm = MockLlmClient(tokens=["hello ", "world"])

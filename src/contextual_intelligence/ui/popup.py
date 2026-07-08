@@ -84,6 +84,7 @@ class LookupPopupWindow(QWidget):
         self.resize(400, 150)
         self.setMinimumWidth(380)
         self.setMaximumWidth(480)
+        self.setMaximumHeight(350)
 
         self._worker: LookupWorker | None = None
         self._buffer: str = ""
@@ -193,7 +194,12 @@ class LookupPopupWindow(QWidget):
 
     def _on_capture_succeeded(self, payload: ContextPayload) -> None:
         app = payload.app_name or "unknown app"
-        self.status_label.setText(f"⏳ Defining '{payload.selected_text}' ({app})...")
+        display_text = payload.selected_text
+        if len(display_text) > 40:
+            display_text = (
+                display_text[:40].rsplit(" ", 1)[0] or display_text[:40]
+            ) + "..."
+        self.status_label.setText(f"⏳ Defining '{display_text}' ({app})...")
         self.adjustSize()
         clamp_to_screen(self)
 
@@ -207,16 +213,28 @@ class LookupPopupWindow(QWidget):
             self.status_label.hide()
 
         if len(lines) >= 1:
-            self.title_label.setText(lines[0])
+            title_text = lines[0]
+            if len(title_text) > 100:
+                title_text = title_text[:100].rsplit(" ", 1)[0] + "..."
+            self.title_label.setText(title_text)
             self.title_label.show()
         if len(lines) >= 2:
-            self.def_label.setText(lines[1])
+            def_text = lines[1]
+            if len(def_text) > 300:
+                def_text = def_text[:300].rsplit(" ", 1)[0] + "..."
+            self.def_label.setText(def_text)
             self.def_label.show()
         if len(lines) >= 3:
-            self.ctx_label.setText(lines[2])
+            ctx_text = lines[2]
+            if len(ctx_text) > 200:
+                ctx_text = ctx_text[:200].rsplit(" ", 1)[0] + "..."
+            self.ctx_label.setText(ctx_text)
             self.ctx_label.show()
         if len(lines) >= 4:
-            self.syn_label.setText("\n".join(lines[3:]))
+            syn_text = "\n".join(lines[3:5])
+            if len(syn_text) > 200:
+                syn_text = syn_text[:200].rsplit(" ", 1)[0] + "..."
+            self.syn_label.setText(syn_text)
             self.syn_label.show()
 
         self.adjustSize()
