@@ -369,3 +369,39 @@ def test_palette_dragging(qapp):
     palette.eventFilter(palette.card_frame, release_ev)
     assert palette._drag_pos is None
     palette.close()
+
+
+def test_palette_copy_button_emits_copied_signal(qapp, monkeypatch):
+    """Explicit Copy emits copied_from_palette for the lookup handoff (SCOPE-30)."""
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.palette.write_text_clipboard", lambda text: True
+    )
+    settings = Settings()
+    palette = PastePaletteWindow(settings, MockLlmClient())
+    palette._current_result_text = "gadget"
+
+    emitted = []
+    palette.copied_from_palette.connect(emitted.append)
+    palette._on_copy_clicked()
+    assert emitted == ["gadget"]
+
+
+def test_palette_preview_ctrl_c_emits_copied_signal(qapp):
+    """Manual Ctrl+C over a preview selection emits copied_from_palette (SCOPE-30)."""
+    settings = Settings()
+    palette = PastePaletteWindow(settings, MockLlmClient())
+    palette.preview_edit.setPlainText("gadget widget")
+    cursor = palette.preview_edit.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(6, cursor.MoveMode.KeepAnchor)  # select "gadget"
+    palette.preview_edit.setTextCursor(cursor)
+
+    emitted = []
+    palette.copied_from_palette.connect(emitted.append)
+    copy_ev = QKeyEvent(
+        QKeyEvent.Type.KeyPress, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier
+    )
+    handled = palette.eventFilter(palette.preview_edit, copy_ev)
+    assert emitted == ["gadget"]
+    assert handled is False  # QTextEdit still performs the actual copy
+    palette.close()

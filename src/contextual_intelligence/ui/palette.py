@@ -10,7 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -121,6 +122,10 @@ def _force_foreground(window: QWidget) -> None:
 class PastePaletteWindow(QWidget):
     """Interactive Smart Paste palette overlay."""
 
+    # Emitted when the user copies text out of the palette (Copy button or
+    # Ctrl+C in the preview) so the tray can record an in-app copy (SCOPE-30).
+    copied_from_palette = Signal(str)
+
     def __init__(
         self,
         settings: Settings,
@@ -218,6 +223,9 @@ class PastePaletteWindow(QWidget):
         self.card_frame.installEventFilter(self)
         self.header_label.installEventFilter(self)
         self.status_label.installEventFilter(self)
+        # Key events only — preview_edit is excluded from the drag filter so
+        # text selection keeps working.
+        self.preview_edit.installEventFilter(self)
 
     def open_palette(self, source_app: str = "") -> None:
         """Inspect clipboard and open palette if valid."""
@@ -398,6 +406,7 @@ class PastePaletteWindow(QWidget):
             return
         success = write_text_clipboard(self._current_result_text)
         if success:
+            self.copied_from_palette.emit(self._current_result_text)
             if self._current_payload:
                 res = PasteResult(
                     payload=self._current_payload,
@@ -438,6 +447,16 @@ class PastePaletteWindow(QWidget):
         super().keyPressEvent(event)
 
     def eventFilter(self, obj: Any, event: Any) -> bool:
+        if (
+            obj is self.preview_edit
+            and event.type() == event.Type.KeyPress
+            and event.matches(QKeySequence.StandardKey.Copy)
+        ):
+            # QTextEdit.selectedText uses U+2029 as its paragraph separator.
+            selected = self.preview_edit.textCursor().selectedText().replace("\u2029", "\n")
+            if selected.strip():
+                self.copied_from_palette.emit(selected)
+            # Fall through: QTextEdit still performs the actual copy.
         if obj in (self, self.card_frame, self.header_label, self.status_label):
             if event.type() == event.Type.MouseButtonPress:
                 if event.button() == Qt.MouseButton.LeftButton:

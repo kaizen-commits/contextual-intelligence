@@ -86,3 +86,23 @@ def test_tray_application_mutual_exclusion_scope_23(qapp, monkeypatch):
 
     tray.quit()
 
+
+def test_tray_records_only_short_palette_copies(qapp, monkeypatch):
+    """Only lookup-sized palette copies are recorded for the handoff (SCOPE-30)."""
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.start", lambda self, hm: None)
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: None)
+
+    tray = TrayApplication(Settings(), MagicMock(), MagicMock())
+    assert tray._recent_app_copy is None
+
+    tray.paste_palette.copied_from_palette.emit("gadget")
+    assert tray._recent_app_copy is not None
+    assert tray._recent_app_copy.text == "gadget"
+    assert tray._recent_app_copy.source == "smart_paste"
+
+    # Oversized copies are ignored; the previous record is kept as-is
+    tray.paste_palette.copied_from_palette.emit("x" * 500)
+    assert tray._recent_app_copy.text == "gadget"
+
+    tray.quit()
+

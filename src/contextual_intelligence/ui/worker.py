@@ -8,16 +8,30 @@ from typing import Any
 
 from PySide6.QtCore import QThread, Signal
 from openai import APIConnectionError
+from pydantic import ValidationError
 
 from contextual_intelligence.capture import CaptureOrchestrator
+from contextual_intelligence.clipboard import read_text_clipboard
 from contextual_intelligence.llm import LlmClient
-from contextual_intelligence.models import CaptureError, MAX_LOOKUP_CHARS
+from contextual_intelligence.models import (
+    CaptureError,
+    CaptureTier,
+    ContextPayload,
+    MAX_LOOKUP_CHARS,
+    RECENT_COPY_TTL_SECONDS,
+    RecentAppCopy,
+)
 
 log = logging.getLogger(__name__)
 
 # gemma-4 occasionally streams an empty/whitespace-only response and an
 # immediate retry succeeds; retry once before surfacing the error card.
 _EMPTY_RESPONSE_RETRIES = 1
+
+_CAPTURE_FAILED_GUIDANCE = (
+    "Lookup needs an active selection. Select a word, or copy a short "
+    "word/phrase from the Smart Paste result and try again."
+)
 
 
 class LookupWorker(QThread):
@@ -35,14 +49,43 @@ class LookupWorker(QThread):
         orchestrator: CaptureOrchestrator,
         llm_client: LlmClient,
         parent: Any | None = None,
+        recent_copy: RecentAppCopy | None = None,
     ) -> None:
         super().__init__(parent)
         self._orchestrator = orchestrator
         self._llm_client = llm_client
+        self._recent_copy = recent_copy
         self._cancelled = False
 
     def cancel(self) -> None:
         self._cancelled = True
+
+    def _recent_copy_payload(self) -> ContextPayload | None:
+        """Handoff for text the app itself just copied (SCOPE-30).
+
+        Never a general clipboard fallback: requires a recorded in-app copy,
+        within its freshness window, still exactly matching the clipboard.
+        """
+        rc = self._recent_copy
+        if rc is None:
+            return None
+        age = time.monotonic() - rc.copied_at
+        if age > RECENT_COPY_TTL_SECONDS:
+            log.info("recent %s copy is stale (%.0fs old); not using handoff", rc.source, age)
+            return None
+        clipboard_text = (read_text_clipboard() or "").replace("\r\n", "\n").strip()
+        if clipboard_text != rc.text.replace("\r\n", "\n").strip():
+            log.info("clipboard no longer matches recent %s copy; not using handoff", rc.source)
+            return None
+        try:
+            return ContextPayload(
+                selected_text=rc.text,
+                app_name="Smart Paste result",
+                tier=CaptureTier.CLIPBOARD,
+            )
+        except ValidationError as exc:
+            log.info("recent %s copy failed payload validation: %s", rc.source, exc)
+            return None
 
     def run(self) -> None:
         self._cancelled = False
@@ -53,8 +96,14 @@ class LookupWorker(QThread):
             payload = self._orchestrator.capture()
         except CaptureError as exc:
             log.warning("capture failed after %.2fs: %s", time.perf_counter() - t_start, exc)
-            self.error_occurred.emit(f"Capture failed: {exc.reason}")
-            return
+            payload = self._recent_copy_payload()
+            if payload is None:
+                self.error_occurred.emit(_CAPTURE_FAILED_GUIDANCE)
+                return
+            log.info(
+                "all capture tiers failed; using recent Smart Paste copy handoff (%d chars)",
+                len(payload.selected_text),
+            )
         except Exception as exc:
             log.exception("unexpected error during capture")
             self.error_occurred.emit(f"Unexpected error: {exc}")

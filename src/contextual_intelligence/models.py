@@ -7,8 +7,10 @@ selections) here rather than sending them downstream.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -24,6 +26,25 @@ class CaptureTier(StrEnum):
     UIA = "uia"
     CLIPBOARD = "clipboard"
     OCR = "ocr"
+
+
+# A copy the app itself placed on the clipboard is only trusted as a lookup
+# handoff while fresh — beyond this window the clipboard is treated as
+# arbitrary user state again (SCOPE-30).
+RECENT_COPY_TTL_SECONDS = 60.0
+
+
+@dataclass
+class RecentAppCopy:
+    """Short text recently copied from inside the app (e.g. Smart Paste result).
+
+    Not a capture tier: consulted only after all capture providers fail, and
+    only when the clipboard still holds exactly this text.
+    """
+
+    text: str
+    copied_at: float  # time.monotonic()
+    source: Literal["smart_paste"]
 
 
 class CaptureError(Exception):

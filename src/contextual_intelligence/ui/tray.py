@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+import time
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, Qt, Signal
@@ -15,6 +16,7 @@ from contextual_intelligence.capture import CaptureOrchestrator, get_foreground_
 from contextual_intelligence.config import Settings
 from contextual_intelligence.hotkey import LOOKUP_HOTKEY_ID, PASTE_HOTKEY_ID, run_hotkey_loop
 from contextual_intelligence.llm import LlmClient
+from contextual_intelligence.models import MAX_LOOKUP_CHARS, RecentAppCopy
 from contextual_intelligence.ui.palette import PastePaletteWindow
 from contextual_intelligence.ui.popup import LookupPopupWindow
 from contextual_intelligence.ui.worker import LookupWorker
@@ -113,6 +115,8 @@ class TrayApplication(QObject):
 
         self.popup = LookupPopupWindow()
         self.paste_palette = PastePaletteWindow(settings, llm_client)
+        self._recent_app_copy: RecentAppCopy | None = None
+        self.paste_palette.copied_from_palette.connect(self._record_app_copy)
         self.tray_icon = QSystemTrayIcon(_create_default_icon(), self.app)
         self.tray_icon.setToolTip("Contextual Intelligence (Ctrl+Alt+D / Ctrl+Alt+V)")
 
@@ -168,6 +172,18 @@ class TrayApplication(QObject):
             char_rep,
         )
 
+    def _record_app_copy(self, text: str) -> None:
+        """Remember short text copied out of the Smart Paste palette so a
+        follow-up Lookup can use it after all capture tiers fail (SCOPE-30)."""
+        text = text.strip()
+        if not text or len(text) > MAX_LOOKUP_CHARS:
+            log.debug("ignoring palette copy for lookup handoff (%d chars)", len(text))
+            return
+        self._recent_app_copy = RecentAppCopy(
+            text=text, copied_at=time.monotonic(), source="smart_paste"
+        )
+        log.info("recorded smart_paste copy for lookup handoff (%d chars)", len(text))
+
     def trigger_lookup(self) -> None:
         log.info("triggering contextual lookup")
         delay_ms = 0
@@ -177,7 +193,12 @@ class TrayApplication(QObject):
             delay_ms = 150  # Allow Windows OS time to restore foreground focus to the target app
 
         def _start() -> None:
-            worker = LookupWorker(self.orchestrator, self.llm_client, parent=self)
+            worker = LookupWorker(
+                self.orchestrator,
+                self.llm_client,
+                parent=self,
+                recent_copy=self._recent_app_copy,
+            )
             self.popup.start_lookup(worker)
 
         if delay_ms > 0:

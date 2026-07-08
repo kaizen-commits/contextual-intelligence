@@ -1,7 +1,14 @@
+import time
+
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from contextual_intelligence.models import CaptureError, CaptureTier, ContextPayload
+from contextual_intelligence.models import (
+    CaptureError,
+    CaptureTier,
+    ContextPayload,
+    RecentAppCopy,
+)
 from contextual_intelligence.ui.popup import LookupPopupWindow
 from contextual_intelligence.ui.worker import LookupWorker
 
@@ -183,7 +190,8 @@ def test_lookup_worker_gives_up_after_retry(qapp):
     assert finished
 
 
-def test_lookup_worker_capture_error(qapp):
+def test_lookup_worker_capture_error_shows_guidance(qapp):
+    """Raw capture failure reasons are logged, not shown; the user gets guidance (SCOPE-30)."""
     orch = MockOrchestrator(error=CaptureError("no selection", CaptureTier.UIA))
     llm = MockLlmClient()
     worker = LookupWorker(orch, llm)
@@ -192,7 +200,76 @@ def test_lookup_worker_capture_error(qapp):
     worker.error_occurred.connect(lambda msg: errors.append(msg))
     worker.run()
     assert len(errors) == 1
-    assert "no selection" in errors[0]
+    assert "Lookup needs an active selection" in errors[0]
+    assert "no selection" not in errors[0]
+
+
+def test_lookup_worker_no_arbitrary_clipboard_fallback(qapp, monkeypatch):
+    """Clipboard contents alone must never become lookup input (SCOPE-30)."""
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.worker.read_text_clipboard", lambda: "stale clipboard text"
+    )
+    orch = MockOrchestrator(error=CaptureError("no selection", CaptureTier.UIA))
+    worker = LookupWorker(orch, MockLlmClient())  # no recent_copy recorded
+
+    captured, errors = [], []
+    worker.capture_succeeded.connect(captured.append)
+    worker.error_occurred.connect(errors.append)
+    worker.run()
+    assert not captured
+    assert len(errors) == 1
+
+
+def test_lookup_worker_recent_copy_handoff(qapp, monkeypatch):
+    """A fresh in-app copy still matching the clipboard is used after all tiers fail (SCOPE-30)."""
+    monkeypatch.setattr("contextual_intelligence.ui.worker.read_text_clipboard", lambda: "gadget")
+    orch = MockOrchestrator(error=CaptureError("all capture tiers failed", CaptureTier.CLIPBOARD))
+    recent = RecentAppCopy(text="gadget", copied_at=time.monotonic(), source="smart_paste")
+    worker = LookupWorker(
+        orch, MockLlmClient(tokens=["gadget (noun)\n", "A device."]), recent_copy=recent
+    )
+
+    events = []
+    worker.capture_succeeded.connect(lambda p: events.append(f"captured:{p.selected_text}:{p.app_name}"))
+    worker.finished_lookup.connect(lambda: events.append("finished"))
+    worker.error_occurred.connect(lambda m: events.append(f"error:{m}"))
+    worker.run()
+    assert "captured:gadget:Smart Paste result" in events
+    assert "finished" in events
+    assert not any(e.startswith("error") for e in events)
+
+
+def test_lookup_worker_recent_copy_stale_rejected(qapp, monkeypatch):
+    monkeypatch.setattr("contextual_intelligence.ui.worker.read_text_clipboard", lambda: "gadget")
+    orch = MockOrchestrator(error=CaptureError("no selection", CaptureTier.UIA))
+    recent = RecentAppCopy(
+        text="gadget", copied_at=time.monotonic() - 120.0, source="smart_paste"
+    )
+    worker = LookupWorker(orch, MockLlmClient(), recent_copy=recent)
+
+    captured, errors = [], []
+    worker.capture_succeeded.connect(captured.append)
+    worker.error_occurred.connect(errors.append)
+    worker.run()
+    assert not captured
+    assert len(errors) == 1
+
+
+def test_lookup_worker_recent_copy_mismatch_rejected(qapp, monkeypatch):
+    """If the clipboard has changed since the in-app copy, the handoff must not fire."""
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.worker.read_text_clipboard", lambda: "something else entirely"
+    )
+    orch = MockOrchestrator(error=CaptureError("no selection", CaptureTier.UIA))
+    recent = RecentAppCopy(text="gadget", copied_at=time.monotonic(), source="smart_paste")
+    worker = LookupWorker(orch, MockLlmClient(), recent_copy=recent)
+
+    captured, errors = [], []
+    worker.capture_succeeded.connect(captured.append)
+    worker.error_occurred.connect(errors.append)
+    worker.run()
+    assert not captured
+    assert len(errors) == 1
 
 
 def test_lookup_worker_cancellation(qapp):
