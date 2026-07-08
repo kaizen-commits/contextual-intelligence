@@ -1,8 +1,8 @@
 # Manual regression checklist
 
-Use this checklist before closing a milestone, after changes to hotkeys/UI workers/capture/clipboard behavior, or when Linear asks for manual QA evidence.
+Use this checklist before closing a milestone, after changes to hotkeys/UI workers/capture/clipboard behavior, or when issue-tracker acceptance criteria ask for manual QA evidence.
 
-Record results in Linear as pass/fail notes with the branch, commit, app restart state, and any observed logs. Keep product signals separate from blockers: a signal can become a follow-up issue without blocking the parent unless an acceptance criterion failed.
+Record results in the task tracker as pass/fail notes with the branch, commit, app restart state, and any observed logs. Keep product signals separate from blockers: a signal can become a follow-up issue without blocking the parent unless an acceptance criterion failed.
 
 ## Pre-flight
 
@@ -67,7 +67,7 @@ Add these acceptance criteria to new feature/bug issues unless explicitly irrele
 - [ ] The UI distinguishes user-correctable conditions from system/service failures.
 - [ ] The failure path preserves user data and clipboard state.
 - [ ] The feature has at least one negative/manual QA case, not only a happy-path test.
-- [ ] Any fallback behavior is explicit in docs or Linear comments, including what it does not cover.
+- [ ] Any fallback behavior is explicit in docs or issue-tracker comments, including what it does not cover.
 
 ## Phase 4 STT additions
 

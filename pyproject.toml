@@ -1,10 +1,11 @@
 [project]
 name = "contextual-intelligence"
 version = "0.1.0"
-description = "Windows-native local-first contextual lookup: select a word anywhere, capture surrounding context via UI Automation, answer through LM Studio."
+description = "Windows-native local-first contextual lookup and preview-first text transformation via LM Studio."
 readme = "README.md"
+license = "MIT"
 authors = [
-    { name = "techn3rd", email = "6035483+kevinrkirby@users.noreply.github.com" }
+    { name = "Kaizen", email = "6035483+kaizen-commits@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [

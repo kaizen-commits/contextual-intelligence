@@ -33,7 +33,7 @@ Default acceptance criteria for feature and bug issues:
 - The UI distinguishes user-correctable conditions from system/service failures.
 - The failure path preserves user data and clipboard state.
 - The change includes at least one negative/manual QA case, not only a happy-path test.
-- Any fallback behavior is explicit in docs or Linear comments, including what it does not cover.
+- Any fallback behavior is explicit in docs or issue-tracker comments, including what it does not cover.
 
 Examples:
 
@@ -95,12 +95,12 @@ Use `docs/qa/manual-regression.md` as the repeatable manual QA baseline before m
 
 `pytest-qt` may be added as a dev-only dependency for widget-level signal, focus, button-state, and event-filter regression tests. It does not replace live Windows manual QA.
 
-## Linear and Git evidence rules
+## Issue tracker and Git evidence rules
 
 For feature or bug work:
 
-- Track durable decisions, implementation slices, review notes, and manual QA in Linear.
-- Include the relevant Linear issue ID in branch names and commit messages when practical.
+- Track durable decisions, implementation slices, review notes, and manual QA in an issue tracker.
+- Include the relevant issue ID in branch names and commit messages when practical.
 - In completion comments, separate automated validation from live manual QA.
 - Report branch name, commit hash, validation commands, and any remaining manual-QA requirements.
 - Do not switch away from a branch that needs human QA unless the QA state and checked-out branch are explicit.
@@ -108,14 +108,14 @@ For feature or bug work:
 ## Documentation rules
 
 - README should point to this file for project-specific implementation and QA rules.
-- Obsidian project docs should hold human-facing plans, walkthroughs, QA summaries, and product reasoning.
-- The LLM Wiki should be a navigation/policy layer, not a duplicate copy of this file.
+- Human-facing plans, walkthroughs, QA summaries, and product reasoning can live in a local knowledge base.
+- The LLM Wiki / knowledge navigation layer should point to source docs, not duplicate this file.
 - Reusable generic rules should be extracted to the central `.agents` assets or a `new_project` template rather than copied between repos.
 
 ## Current source-of-truth pointers
 
 - README: `README.md`
-- Implementation plan: `E:\obsidian-vault\Kaizen\projects\contextual-intelligence\implementation_plan.md`
-- Phase 2 walkthrough: `E:\obsidian-vault\Kaizen\projects\contextual-intelligence\Walkthrough — Phase 2 Smart Paste MVP - Linear SCOPE-17.md`
-- Linear project: Contextual Intelligence
-- LLM Wiki policy note: `E:\obsidian-vault\LLM Wiki\Agent Project Rules.md`
+- Project rules: `PROJECT_RULES.md`
+- Manual QA baseline: `docs/qa/manual-regression.md`
+- Task tracker: maintained outside the repo with issue-based acceptance criteria and QA evidence.
+- LLM Wiki / knowledge base: maintained outside the repo for longer design notes and navigation.

@@ -5,11 +5,26 @@ Windows, trigger a hotkey, and get a compact dictionary card explaining the
 word *as used in that context* — answered by a local model via LM Studio.
 Smart Paste (an Advanced-Paste-style clipboard transformer) is integrated for paragraph-level transformation and rewriting.
 
-- **Plan (source of truth):** `obsidian-vault/Kaizen/projects/contextual-intelligence/implementation_plan.md`
+- **Project knowledge:** longer design notes are maintained in a local LLM Wiki / knowledge base; this repository keeps the public-facing implementation docs.
 - **Project rules:** [`PROJECT_RULES.md`](PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
 - **Manual QA:** [`docs/qa/manual-regression.md`](docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
-- **Linear:** [Contextual Intelligence](https://linear.app/kaizen-agent/project/contextual-intelligence-086654bde189)
+- **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
 - **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete; Phase 4 (Speech Input / Voice-to-Transform) planned.
+
+## What it does
+
+- Explains selected words or short phrases in the context where they appear.
+- Transforms copied text through a preview-first Smart Paste palette.
+- Keeps clipboard mutation explicit: transformed text is copied only when the user clicks Copy.
+- Uses local model serving by default through LM Studio's OpenAI-compatible API.
+- Treats unsupported or failed paths as product states that need clear user guidance, not raw internal errors.
+
+## What it does not do
+
+- It does not run under WSL; the app depends on Windows hotkeys, clipboard, UI Automation, and Qt UI behavior.
+- It does not automatically paste transformed text back into the source application.
+- It does not include a cloud fallback by default.
+- It is not a general screen reader or OCR tool.
 
 ## Requirements
 
@@ -34,7 +49,7 @@ word — the full loop is testable without hotkey plumbing.
 
 ## Layout
 
-```
+```text
 src/contextual_intelligence/
 ├── models.py                    ContextPayload, PastePayload, PasteResult — strict validation
 ├── clipboard.py                 Public text-only clipboard utility with retry backoff
@@ -61,3 +76,18 @@ an explicit arm → capture → disarm lifecycle with tests proving nothing stay
 armed after a cycle; every capture is validated (empty/mojibake/oversized
 rejected) before it reaches the model; every attempt logs tier, duration, and
 failure reason so fallback work is driven by telemetry, not guesses.
+
+## Development credits
+
+Contextual Intelligence is designed and maintained by Kaizen, with assistance from AI coding and reasoning tools:
+
+- Hermes / GPT-5.5 — project orchestration, architecture review, QA planning, documentation, and implementation support
+- Claude Fable 5 — implementation and code review assistance
+- ChatGPT — design exploration and product reasoning
+- Gemini / Antigravity — implementation planning, review, and alternative design suggestions
+
+Final product decisions, testing, integration, and release responsibility remain with the human maintainer.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
