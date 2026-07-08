@@ -213,6 +213,11 @@ class PastePaletteWindow(QWidget):
 
         card_layout.addLayout(btn_layout)
 
+        self.installEventFilter(self)
+        self.card_frame.installEventFilter(self)
+        self.header_label.installEventFilter(self)
+        self.status_label.installEventFilter(self)
+
     def open_palette(self, source_app: str = "") -> None:
         """Inspect clipboard and open palette if valid."""
         self.cancel_worker()
@@ -405,6 +410,22 @@ class PastePaletteWindow(QWidget):
             return
         super().keyPressEvent(event)
 
+    def eventFilter(self, obj: Any, event: Any) -> bool:
+        if obj in (self, self.card_frame, self.header_label, self.status_label):
+            if event.type() == event.Type.MouseButtonPress:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                    return True
+            elif event.type() == event.Type.MouseMove:
+                if event.buttons() & Qt.MouseButton.LeftButton and self._drag_pos is not None:
+                    self.move(event.globalPosition().toPoint() - self._drag_pos)
+                    return True
+            elif event.type() == event.Type.MouseButtonRelease:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self._drag_pos = None
+                    return True
+        return super().eventFilter(obj, event)
+
     def mousePressEvent(self, event: Any) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
@@ -418,6 +439,13 @@ class PastePaletteWindow(QWidget):
             event.accept()
         else:
             super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: Any) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = None
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
 
     def closeEvent(self, event: Any) -> None:
         self.cancel_worker()

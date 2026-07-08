@@ -300,7 +300,7 @@ def test_palette_dragging(qapp):
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
     )
-    palette.mousePressEvent(press_ev)
+    palette.eventFilter(palette.card_frame, press_ev)
     assert palette._drag_pos is not None
 
     move_ev = QMouseEvent(
@@ -311,7 +311,18 @@ def test_palette_dragging(qapp):
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
     )
-    palette.mouseMoveEvent(move_ev)
+    palette.eventFilter(palette.card_frame, move_ev)
     assert palette.pos().x() == initial_pos.x() + 50
     assert palette.pos().y() == initial_pos.y() + 50
+
+    release_ev = QMouseEvent(
+        QMouseEvent.Type.MouseButtonRelease,
+        QPointF(60, 60),
+        QPointF(initial_pos.x() + 60, initial_pos.y() + 60),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    palette.eventFilter(palette.card_frame, release_ev)
+    assert palette._drag_pos is None
     palette.close()
