@@ -25,7 +25,7 @@ A structure of crossed strips; figuratively, an interconnected framework of idea
 Context: [Investing] Munger's metaphor for combining models from many disciplines.
 Synonyms: framework, lattice, grid, mesh
 
-Line 1 is the user's term plus its part of speech in parentheses. Line 2 defines \
+Line 1 is the term (if the user's selected term is misspelled or a typo, automatically infer and use the correct spelling) plus its part of speech in parentheses. Line 2 defines \
 the term as used in the passage, one or two sentences. Line 3 names the passage's \
 domain in brackets and what the term means there. Line 4 lists 3-5 synonyms, or "none"."""
 

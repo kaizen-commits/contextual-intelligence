@@ -12,8 +12,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-# A "selection" is a word or short phrase, not a document.
-MAX_SELECTION_CHARS = 400
+# A "selection" is a word, short phrase, or sentence/passage.
+MAX_SELECTION_CHARS = 1000
 MAX_PASTE_INPUT_CHARS = 8000
 # Control characters other than tab/newline signal a broken capture.
 MAX_CONTROL_CHAR_RATIO = 0.05
@@ -67,10 +67,9 @@ class ContextPayload(BaseModel):
         if not value:
             raise ValueError("empty selection")
         if len(value) > MAX_SELECTION_CHARS:
-            raise ValueError(
-                f"selection too long ({len(value)} chars > {MAX_SELECTION_CHARS}); "
-                "not a lookup target"
-            )
+            # Graceful degradation (SCOPE-26): instead of raising ValueError and failing
+            # capture tiers when user selects a long passage or sentence, truncate cleanly.
+            value = (value[: MAX_SELECTION_CHARS - 3].rsplit(" ", 1)[0] or value[: MAX_SELECTION_CHARS - 3]) + "..."
         if not any(ch.isalnum() for ch in value):
             raise ValueError("selection contains no word characters")
         return value

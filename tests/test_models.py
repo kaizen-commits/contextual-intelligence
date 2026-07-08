@@ -41,9 +41,10 @@ def test_empty_selection_rejected(bad):
         make(selected_text=bad)
 
 
-def test_oversized_selection_rejected():
-    with pytest.raises(ValidationError, match="too long"):
-        make(selected_text="x" * (MAX_SELECTION_CHARS + 1))
+def test_oversized_selection_degrades_gracefully():
+    p = make(selected_text="word " * 300)
+    assert len(p.selected_text) <= MAX_SELECTION_CHARS
+    assert p.selected_text.endswith("...")
 
 
 def test_symbol_only_selection_rejected():

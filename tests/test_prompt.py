@@ -39,7 +39,7 @@ def test_prompt_without_context_asks_general_meaning():
 
 
 def test_system_prompt_pins_card_shape():
-    for marker in ("part of speech", "Context:", "Synonyms:"):
+    for marker in ("part of speech", "Context:", "Synonyms:", "automatically infer and use the correct spelling"):
         assert marker in SYSTEM_PROMPT
 
 
