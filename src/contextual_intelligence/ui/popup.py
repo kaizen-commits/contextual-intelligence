@@ -89,6 +89,7 @@ class LookupPopupWindow(QWidget):
         self._worker: LookupWorker | None = None
         self._buffer: str = ""
         self._drag_pos = None
+        self._selected_chars_len: int = 0
 
         self._setup_ui()
 
@@ -194,6 +195,7 @@ class LookupPopupWindow(QWidget):
 
     def _on_capture_succeeded(self, payload: ContextPayload) -> None:
         app = payload.app_name or "unknown app"
+        self._selected_chars_len = len(payload.selected_text)
         display_text = payload.selected_text
         if len(display_text) > 40:
             display_text = (
@@ -245,9 +247,18 @@ class LookupPopupWindow(QWidget):
             self.status_label.hide()
         else:
             log.warning("lookup finished with empty model response")
-            self.status_label.setText(
-                "❌ Model returned an empty response — re-select the word and try again"
-            )
+            if self._selected_chars_len > 150:
+                msg = (
+                    f"❌ Model returned an empty response. You selected {self._selected_chars_len:,} chars — "
+                    "Contextual Lookup is optimized for individual words or short phrases (up to 1,000 chars). "
+                    "For summarizing or rewriting paragraphs, please use Smart Paste (Ctrl+Alt+V)."
+                )
+            else:
+                msg = (
+                    "❌ Model returned an empty response. Contextual Lookup is designed for words and short phrases "
+                    "(up to 1,000 chars). Please re-select a specific term and try again."
+                )
+            self.status_label.setText(msg)
             self.status_label.show()
         self.adjustSize()
         clamp_to_screen(self)

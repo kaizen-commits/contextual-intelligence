@@ -76,6 +76,20 @@ def test_popup_empty_response_shows_message(qapp):
     assert "empty response" in popup.status_label.text()
 
 
+def test_popup_empty_response_informative_guidance(qapp):
+    popup_short = LookupPopupWindow()
+    popup_short._on_capture_succeeded(ContextPayload(selected_text="short word", tier=CaptureTier.UIA, app_name="test"))
+    popup_short._on_finished()
+    assert "up to 1,000 chars" in popup_short.status_label.text()
+    assert "re-select a specific term" in popup_short.status_label.text()
+
+    popup_long = LookupPopupWindow()
+    popup_long._on_capture_succeeded(ContextPayload(selected_text="x" * 500, tier=CaptureTier.UIA, app_name="test"))
+    popup_long._on_finished()
+    assert "You selected 500 chars" in popup_long.status_label.text()
+    assert "use Smart Paste (Ctrl+Alt+V)" in popup_long.status_label.text()
+
+
 def test_popup_finished_with_content_hides_status(qapp):
     popup = LookupPopupWindow()
     popup._on_token("test (noun)\nA simple test.")
