@@ -92,6 +92,12 @@ uv run pytest                       # automated regression suite
 uv run ruff check .                 # lint
 ```
 
+## LLM output expectations
+
+Contextual Intelligence shows local model output; it does not guarantee that the answer or transformation is correct. Treat Lookup answers as quick context, not authoritative references, and review Smart Paste results before copying them into another app.
+
+Local models may produce inaccurate, biased, incomplete, or unexpected text. Do not use model output as medical, legal, financial, safety-critical, or other professional advice without independent verification.
+
 ## Known limitations
 
 - Windows only; WSL is not supported.
