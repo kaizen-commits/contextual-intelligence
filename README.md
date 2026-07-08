@@ -3,7 +3,15 @@
 Windows-native, local-first contextual lookup: select a word anywhere in
 Windows, trigger a hotkey, and get a compact dictionary card explaining the
 word *as used in that context* — answered by a local model via LM Studio.
-Smart Paste (an Advanced-Paste-style clipboard transformer) is integrated for paragraph-level transformation and rewriting.
+Smart Paste is a preview-first clipboard transformer for paragraph-level
+rewriting and transformation.
+
+## Current maturity
+
+This is a Windows-only, run-from-source developer preview. Contextual Lookup
+and Smart Paste are implemented and covered by automated/manual regression
+tests, but packaging, installer support, speech input, and broader
+app-compatibility polish are still planned.
 
 - **Project knowledge:** longer design notes are maintained in a local LLM Wiki / knowledge base; this repository keeps the public-facing implementation docs.
 - **Project rules:** [`PROJECT_RULES.md`](PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
@@ -26,26 +34,72 @@ Smart Paste (an Advanced-Paste-style clipboard transformer) is integrated for pa
 - It does not include a cloud fallback by default.
 - It is not a general screen reader or OCR tool.
 
+## Privacy and data handling
+
+Contextual Intelligence is local-first by default.
+
+- Selected text and clipboard text are processed locally by the app.
+- Text is sent only to the configured OpenAI-compatible endpoint, typically LM Studio running on the same machine.
+- No cloud fallback is enabled by default.
+- Smart Paste reads clipboard text only when opened/triggered and does not mutate the clipboard until the user clicks Copy.
+- Clipboard history is in-memory only and is not persisted to disk by this app.
+- High-value non-text clipboard formats such as images, files, and audio are protected from destructive fallback handling.
+- Logs are intended for capture tier, timing, and failure diagnostics, not content storage.
+
+If you configure LM Studio or another OpenAI-compatible endpoint on another
+machine, selected or copied text will be sent to that endpoint.
+
 ## Requirements
 
 - Windows 11 (Win32 + UI Automation; will not run under WSL)
 - [uv](https://docs.astral.sh/uv/) (Python 3.12 pinned via `.python-version`)
 - LM Studio serving an OpenAI-compatible API on `localhost:1234`
-  (default model: `google/gemma-4-e4b` — override in
-  `%APPDATA%\contextual-intelligence\config.toml`)
+  (default model: `google/gemma-4-e4b`)
 
-## Phase 0 spike
+Override the model, endpoint, token limits, or API key with
+`%APPDATA%\contextual-intelligence\config.toml` or environment variables such
+as `LMSTUDIO_BASE_URL`, `LMSTUDIO_API_KEY`, and `CI_MODEL`.
+
+## Quick start
+
+```powershell
+git clone https://github.com/kaizen-commits/contextual-intelligence.git
+cd contextual-intelligence
+uv sync
+
+uv run ci-lookup smoke
+uv run ci-lookup capture --delay 3
+uv run ci-lookup lookup --delay 3
+uv run ci-lookup tray
+```
+
+`uv run ci-lookup tray` starts the tray app with global hotkeys. Use
+`uv run ci-lookup listen` for a simpler terminal-only hotkey loop where
+`Ctrl+Alt+D` triggers Lookup until `Ctrl+C` exits.
+
+`--delay N` waits N seconds so you can click into another app and select a
+word — the capture/lookup loop is testable without hotkey plumbing.
+
+## Developer commands
 
 ```powershell
 uv run ci-lookup smoke              # LM Studio round trip + loaded model list
 uv run ci-lookup capture --delay 3  # select a word anywhere, see the captured payload
 uv run ci-lookup lookup --delay 3   # full loop: capture -> validate -> streamed answer
 uv run ci-lookup listen             # Ctrl+Alt+D triggers lookup until Ctrl+C
-uv run pytest                       # payload validation, tier orchestration, lifecycle contract
+uv run ci-lookup tray               # tray app with Lookup and Smart Paste hotkeys
+uv run pytest                       # automated regression suite
+uv run ruff check .                 # lint
 ```
 
-`--delay N` waits N seconds so you can click into another app and select a
-word — the full loop is testable without hotkey plumbing.
+## Known limitations
+
+- Windows only; WSL is not supported.
+- UI Automation coverage varies by application.
+- Protected/password fields are intentionally not captured.
+- Some Electron, terminal, game-overlay, or heavily customized apps may expose limited text context.
+- Smart Paste currently copies transformed text explicitly; it does not automatically paste back into the source app.
+- Speech input, installer packaging, and OCR/image clipboard support are planned, not complete.
 
 ## Layout
 
@@ -68,7 +122,7 @@ src/contextual_intelligence/
 ├── hotkey.py                    RegisterHotKey loop with multi-hotkey degradation
 ├── config.py                    settings + TOML override
 ├── log.py                       capture telemetry goes to stderr
-└── cli.py                       smoke / capture / lookup / listen
+└── cli.py                       smoke / capture / lookup / listen / tray
 ```
 
 Design rules carried from the original app's failure: capture listeners have
@@ -76,6 +130,10 @@ an explicit arm → capture → disarm lifecycle with tests proving nothing stay
 armed after a cycle; every capture is validated (empty/mojibake/oversized
 rejected) before it reaches the model; every attempt logs tier, duration, and
 failure reason so fallback work is driven by telemetry, not guesses.
+
+## Security notes
+
+See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and endpoint trust notes.
 
 ## Development credits
 
