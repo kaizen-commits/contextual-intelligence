@@ -61,3 +61,7 @@ def test_build_paste_prompt_without_app():
 
 def test_paste_system_prompt_instructions():
     assert "ONLY the transformed text directly" in PASTE_SYSTEM_PROMPT
+    assert "Markdown Requests:" in PASTE_SYSTEM_PROMPT
+    assert "apply rich Markdown syntax" in PASTE_SYSTEM_PROMPT
+    assert "Do NOT wrap the entire response in a ```markdown fence" in PASTE_SYSTEM_PROMPT
+    assert "Other Formats:" in PASTE_SYSTEM_PROMPT

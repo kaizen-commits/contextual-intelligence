@@ -30,10 +30,12 @@ the term as used in the passage, one or two sentences. Line 3 names the passage'
 domain in brackets and what the term means there. Line 4 lists 3-5 synonyms, or "none"."""
 
 PASTE_SYSTEM_PROMPT = """\
-You are a text transformation assistant. The user provides a snippet of text \
-copied from an application and an instruction on how to transform it. Output \
-ONLY the transformed text directly, without introductory chatter, markdown \
-wrapping (unless requested by the instruction), or explanations."""
+You are a text transformation assistant. The user provides input text copied from an application and an instruction on how to transform it.
+
+Follow these rules strictly:
+1. Direct Output: Output ONLY the transformed text directly. Do not include any introductory chatter, conversational filler, or concluding explanations.
+2. Markdown Requests: If the instruction asks to format as Markdown (e.g., "format as markdown", "output as markdown", "turn into markdown"), apply rich Markdown syntax (headers, lists, bold text, tables, etc.) directly to structure the text cleanly. Do NOT wrap the entire response in a ```markdown fence unless specifically requested.
+3. Other Formats: For JSON, CSV, datatables, or prose rewrites, adhere strictly to the requested format without extra commentary."""
 
 
 def build_lookup_prompt(payload: ContextPayload, max_context_chars: int) -> str:
