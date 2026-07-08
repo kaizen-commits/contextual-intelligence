@@ -112,6 +112,20 @@ def test_popup_window_error_state(qapp):
     assert popup.title_label.isHidden()
 
 
+def test_popup_error_message_not_clipped(qapp):
+    """Long wrapped status messages must grow the popup, not clip (SCOPE-30 QA)."""
+    popup = LookupPopupWindow()
+    popup.show()
+    popup._on_started()  # compact size, as in the real trigger sequence
+    popup._on_error("Lookup needs an active selection. " * 10)
+    qapp.processEvents()
+
+    label = popup.status_label
+    assert label.height() >= label.heightForWidth(label.width())
+    assert popup.height() <= popup.maximumHeight()
+    popup.close()
+
+
 def test_popup_window_dimensions_and_truncation(qapp):
     popup = LookupPopupWindow()
     assert popup.maximumHeight() == 350

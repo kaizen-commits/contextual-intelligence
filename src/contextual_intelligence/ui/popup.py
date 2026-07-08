@@ -145,6 +145,35 @@ class LookupPopupWindow(QWidget):
         self.syn_label.hide()
         card_layout.addWidget(self.syn_label)
 
+    def _resize_to_content(self) -> None:
+        """Resize to fit content, honouring word-wrap.
+
+        adjustSize() alone under-sizes wrapped QLabels: the window height comes
+        from a layout cache that setText() only invalidates via a posted event,
+        so a long single-shot status message clips until the next layout pass.
+        Ask each visible label directly (heightForWidth is computed fresh) and
+        grow the window by the shortfall now.
+        """
+        self.adjustSize()
+        layout = self.layout()
+        if layout is None or not self.isVisible():
+            return
+        layout.activate()
+        shortfall = 0
+        for lbl in (
+            self.status_label,
+            self.title_label,
+            self.def_label,
+            self.ctx_label,
+            self.syn_label,
+        ):
+            if not lbl.isHidden() and lbl.wordWrap() and lbl.width() > 0:
+                shortfall += max(0, lbl.heightForWidth(lbl.width()) - lbl.height())
+        if shortfall > 0:
+            needed = min(self.height() + shortfall, self.maximumHeight())
+            if needed > self.height():
+                self.resize(self.width(), needed)
+
     def start_lookup(self, worker: LookupWorker) -> None:
         if self._worker is not None and self._worker.isRunning():
             log.warning("Lookup already in progress, ignoring trigger")
@@ -190,7 +219,7 @@ class LookupPopupWindow(QWidget):
         self.syn_label.hide()
         self.status_label.setText("⏳ Analyzing context...")
         self.status_label.show()
-        self.adjustSize()
+        self._resize_to_content()
         clamp_to_screen(self)
 
     def _on_capture_succeeded(self, payload: ContextPayload) -> None:
@@ -202,7 +231,7 @@ class LookupPopupWindow(QWidget):
                 display_text[:40].rsplit(" ", 1)[0] or display_text[:40]
             ) + "..."
         self.status_label.setText(f"⏳ Defining '{display_text}' ({app})...")
-        self.adjustSize()
+        self._resize_to_content()
         clamp_to_screen(self)
 
     def _on_token(self, chunk: str) -> None:
@@ -239,7 +268,7 @@ class LookupPopupWindow(QWidget):
             self.syn_label.setText(syn_text)
             self.syn_label.show()
 
-        self.adjustSize()
+        self._resize_to_content()
         clamp_to_screen(self)
 
     def _on_finished(self) -> None:
@@ -260,7 +289,7 @@ class LookupPopupWindow(QWidget):
                 )
             self.status_label.setText(msg)
             self.status_label.show()
-        self.adjustSize()
+        self._resize_to_content()
         clamp_to_screen(self)
 
     def _on_error(self, msg: str) -> None:
@@ -270,7 +299,7 @@ class LookupPopupWindow(QWidget):
         self.syn_label.hide()
         self.status_label.setText(f"❌ {msg}")
         self.status_label.show()
-        self.adjustSize()
+        self._resize_to_content()
         clamp_to_screen(self)
 
     def keyPressEvent(self, event: Any) -> None:
