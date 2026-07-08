@@ -26,6 +26,15 @@ The product should feel fast, private, understandable, and recoverable.
 
 Every unsupported, ambiguous, failed, or edge-case path must either complete the expected action or explain the next useful action in plain language.
 
+Default acceptance criteria for feature and bug issues:
+
+- Unsupported, ambiguous, failed, or edge-case paths either complete the expected action or explain the next useful action in plain language.
+- Raw internal errors are logged, not shown as the primary user-facing message.
+- The UI distinguishes user-correctable conditions from system/service failures.
+- The failure path preserves user data and clipboard state.
+- The change includes at least one negative/manual QA case, not only a happy-path test.
+- Any fallback behavior is explicit in docs or Linear comments, including what it does not cover.
+
 Examples:
 
 - If Contextual Lookup receives a paragraph or oversized selection, explain that Lookup is designed for words/short phrases and point to Smart Paste for paragraph-level questions or rewriting.
@@ -81,6 +90,8 @@ Manual QA remains required for:
 - mixed-DPI / multi-monitor placement
 - clipboard locking or external app ownership
 - end-to-end Lookup ↔ Smart Paste transitions
+
+Use `docs/qa/manual-regression.md` as the repeatable manual QA baseline before milestone closeout or after changes to hotkeys, capture, clipboard behavior, overlays, worker lifecycles, model failure handling, or graceful degradation text.
 
 `pytest-qt` may be added as a dev-only dependency for widget-level signal, focus, button-state, and event-filter regression tests. It does not replace live Windows manual QA.
 

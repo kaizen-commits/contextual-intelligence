@@ -7,8 +7,9 @@ Smart Paste (an Advanced-Paste-style clipboard transformer) is integrated for pa
 
 - **Plan (source of truth):** `obsidian-vault/Kaizen/projects/contextual-intelligence/implementation_plan.md`
 - **Project rules:** [`PROJECT_RULES.md`](PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
+- **Manual QA:** [`docs/qa/manual-regression.md`](docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
 - **Linear:** [Contextual Intelligence](https://linear.app/kaizen-agent/project/contextual-intelligence-086654bde189)
-- **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete
+- **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete; Phase 4 (Speech Input / Voice-to-Transform) planned.
 
 ## Requirements
 
