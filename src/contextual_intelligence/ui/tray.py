@@ -170,11 +170,28 @@ class TrayApplication(QObject):
 
     def trigger_lookup(self) -> None:
         log.info("triggering contextual lookup")
-        worker = LookupWorker(self.orchestrator, self.llm_client, parent=self)
-        self.popup.start_lookup(worker)
+        delay_ms = 0
+        if self.paste_palette.isVisible():
+            log.info("closing open Smart Paste palette before triggering lookup")
+            self.paste_palette.close()
+            delay_ms = 150  # Allow Windows OS time to restore foreground focus to the target app
+
+        def _start() -> None:
+            worker = LookupWorker(self.orchestrator, self.llm_client, parent=self)
+            self.popup.start_lookup(worker)
+
+        if delay_ms > 0:
+            from PySide6.QtCore import QTimer
+
+            QTimer.singleShot(delay_ms, _start)
+        else:
+            _start()
 
     def trigger_paste(self, source_app: str = "") -> None:
         log.info("triggering smart paste palette (source app: %s)", source_app or "unknown")
+        if self.popup.isVisible():
+            log.info("closing open Contextual Lookup popup before triggering paste")
+            self.popup.close()
         self.paste_palette.open_palette(source_app)
 
     def run(self) -> int:

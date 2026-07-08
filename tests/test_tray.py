@@ -50,3 +50,39 @@ def test_tray_application_init_and_triggers(qapp, monkeypatch):
 
     # Test quit
     tray.quit()
+
+
+def test_tray_application_mutual_exclusion_scope_23(qapp, monkeypatch):
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.start", lambda self, hm: None)
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: None)
+    monkeypatch.setattr("PySide6.QtCore.QTimer.singleShot", lambda delay, cb: cb())
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.palette.has_high_value_non_text_format",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.palette.read_text_clipboard",
+        lambda: "test text",
+    )
+
+    settings = Settings()
+    orchestrator = MagicMock()
+    llm = MagicMock()
+
+    tray = TrayApplication(settings, orchestrator, llm)
+
+    # 1. When palette is visible and lookup is triggered, palette should close
+    tray.paste_palette.show()
+    assert tray.paste_palette.isVisible()
+    tray.trigger_lookup()
+    assert not tray.paste_palette.isVisible()
+
+    # 2. When popup is visible and paste is triggered, popup should close
+    tray.popup.show()
+    assert tray.popup.isVisible()
+    tray.trigger_paste("test_app.exe")
+    assert not tray.popup.isVisible()
+    assert tray.paste_palette.isVisible()
+
+    tray.quit()
+
