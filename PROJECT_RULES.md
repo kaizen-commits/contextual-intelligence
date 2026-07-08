@@ -2,7 +2,7 @@
 
 This file is the canonical project-specific rules registry for Contextual Intelligence.
 
-Tool-specific files such as `CLAUDE.md`, `GEMINI.md`, or `AGENTS.md`, if they are ever added to this repository, should be thin discovery shims that point back here rather than duplicated rulebooks. Global/user-level agent files must stay project-agnostic.
+Tool-specific files such as `CLAUDE.md`, `GEMINI.md`, or `AGENTS.md`, if they are ever added at the repository root, should be thin discovery shims that point back here rather than duplicated rulebooks. The same rule applies to project-local `.agents/` entrypoint files, which may be hidden by default on Windows but can still be tracked by Git and read by agent tools. Global/user-level agent files must stay project-agnostic.
 
 ## Product identity
 
