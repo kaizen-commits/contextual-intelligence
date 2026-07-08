@@ -283,3 +283,46 @@ def test_worker_signal_disconnection_and_cleanup(qapp, monkeypatch):
     assert "zombie token" not in palette.preview_edit.toPlainText()
     assert "zombie error" not in palette.status_label.text()
     palette.close()
+
+
+def test_primary_button_states_send_and_copy(qapp, monkeypatch):
+    """Verify primary button acts as Send before result and Copy after result (SCOPE-28)."""
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.palette.has_high_value_non_text_format",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "contextual_intelligence.ui.palette.read_text_clipboard",
+        lambda: "hello world",
+    )
+    settings = Settings()
+    llm = MockLlmClient(["TRANSFORMED"])
+    palette = PastePaletteWindow(settings, llm)
+    palette.open_palette("notepad.exe")
+
+    # Initial state: Send button, disabled because input empty
+    assert palette.copy_btn.text() == "Send"
+    assert not palette.copy_btn.isEnabled()
+
+    # Typing instruction enables Send button
+    palette.instruction_input.setText("summarize")
+    assert palette.copy_btn.text() == "Send"
+    assert palette.copy_btn.isEnabled()
+
+    # Clicking Send triggers submit
+    palette._on_primary_btn_clicked()
+    assert not palette.copy_btn.isEnabled()
+
+    # Worker finishes -> button switches to Copy
+    if palette._worker:
+        palette._worker.wait(2000)
+    qapp.processEvents()
+
+    assert palette.copy_btn.text() == "Copy"
+    assert palette.copy_btn.isEnabled()
+
+    # Editing instruction after result switches button back to Send
+    palette.instruction_input.setText("summarize differently")
+    assert palette.copy_btn.text() == "Send"
+    assert palette.copy_btn.isEnabled()
+    palette.close()

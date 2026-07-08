@@ -180,6 +180,7 @@ class PastePaletteWindow(QWidget):
             "e.g., summarize in bullet points, convert to JSON..."
         )
         self.instruction_input.returnPressed.connect(self._on_submit)
+        self.instruction_input.textChanged.connect(self._on_instruction_changed)
         card_layout.addWidget(self.instruction_input)
 
         # Status label
@@ -204,10 +205,10 @@ class PastePaletteWindow(QWidget):
         self.cancel_btn.clicked.connect(self.close)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.copy_btn = QPushButton("Copy", self.card_frame)
+        self.copy_btn = QPushButton("Send", self.card_frame)
         self.copy_btn.setObjectName("CopyBtn")
         self.copy_btn.setEnabled(False)
-        self.copy_btn.clicked.connect(self._on_copy_clicked)
+        self.copy_btn.clicked.connect(self._on_primary_btn_clicked)
         btn_layout.addWidget(self.copy_btn)
 
         card_layout.addLayout(btn_layout)
@@ -222,6 +223,7 @@ class PastePaletteWindow(QWidget):
         self._history_idx = len(self.history)
         self.preview_edit.clear()
         self.instruction_input.clear()
+        self.copy_btn.setText("Send")
         self.copy_btn.setEnabled(False)
 
         # 1. Non-text check (fail closed)
@@ -260,6 +262,7 @@ class PastePaletteWindow(QWidget):
         self.status_label.setText(msg)
         self.status_label.show()
         self.instruction_input.setEnabled(False)
+        self.copy_btn.setText("Send")
         self.copy_btn.setEnabled(False)
 
     def _present_window(self) -> None:
@@ -290,6 +293,24 @@ class PastePaletteWindow(QWidget):
         self._cleanup_worker()
         return res
 
+    def _on_instruction_changed(self, text: str) -> None:
+        if (
+            self._current_result_text
+            and self._current_payload
+            and text.strip() == self._current_payload.instruction
+        ):
+            self.copy_btn.setText("Copy")
+            self.copy_btn.setEnabled(True)
+        else:
+            self.copy_btn.setText("Send")
+            self.copy_btn.setEnabled(bool(text.strip()))
+
+    def _on_primary_btn_clicked(self) -> None:
+        if self.copy_btn.text() == "Send":
+            self._on_submit()
+        else:
+            self._on_copy_clicked()
+
     def _on_submit(self) -> None:
         instruction = self.instruction_input.text().strip()
         if not instruction:
@@ -298,6 +319,7 @@ class PastePaletteWindow(QWidget):
             return
 
         self.cancel_worker()
+        self.copy_btn.setText("Send")
         self.copy_btn.setEnabled(False)
         self.preview_edit.clear()
         self.status_label.setText("⏳ Transforming...")
@@ -329,6 +351,7 @@ class PastePaletteWindow(QWidget):
     def _on_retrying(self, attempt: int) -> None:
         self._current_result_text = ""
         self.preview_edit.clear()
+        self.copy_btn.setText("Send")
         self.copy_btn.setEnabled(False)
         self.status_label.setText(f"⏳ Empty response from model, retrying (attempt {attempt})...")
 
@@ -349,15 +372,19 @@ class PastePaletteWindow(QWidget):
             self.status_label.setText(
                 f"✅ Done in {duration_ms:.0f}ms. Review preview and click Copy."
             )
+            self.copy_btn.setText("Copy")
             self.copy_btn.setEnabled(True)
             self.copy_btn.setFocus()
         else:
             self.status_label.setText("❌ Model returned empty transformation.")
+            self.copy_btn.setText("Send")
+            self.copy_btn.setEnabled(bool(self.instruction_input.text().strip()))
         clamp_to_screen(self)
 
     def _on_error(self, msg: str) -> None:
         self.status_label.setText(f"❌ {msg}")
-        self.copy_btn.setEnabled(False)
+        self.copy_btn.setText("Send")
+        self.copy_btn.setEnabled(bool(self.instruction_input.text().strip()))
         clamp_to_screen(self)
 
     def _on_copy_clicked(self) -> None:
