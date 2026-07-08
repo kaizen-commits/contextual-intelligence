@@ -3,12 +3,11 @@
 Windows-native, local-first contextual lookup: select a word anywhere in
 Windows, trigger a hotkey, and get a compact dictionary card explaining the
 word *as used in that context* — answered by a local model via LM Studio.
-Smart Paste (an Advanced-Paste-style clipboard transformer) arrives in a
-later phase.
+Smart Paste (an Advanced-Paste-style clipboard transformer) is integrated for paragraph-level transformation and rewriting.
 
 - **Plan (source of truth):** `obsidian-vault/Kaizen/projects/contextual-intelligence/implementation_plan.md`
 - **Linear:** [Contextual Intelligence](https://linear.app/kaizen-agent/project/contextual-intelligence-086654bde189)
-- **Status:** Phase 0 — scaffold + accessibility-first capture spike
+- **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete
 
 ## Requirements
 
@@ -35,14 +34,21 @@ word — the full loop is testable without hotkey plumbing.
 
 ```
 src/contextual_intelligence/
-├── models.py                    ContextPayload — every capture validated here
+├── models.py                    ContextPayload, PastePayload, PasteResult — strict validation
+├── clipboard.py                 Public text-only clipboard utility with retry backoff
 ├── capture/
 │   ├── __init__.py              CaptureProvider protocol + tier orchestrator
 │   ├── uia.py                   tier 1: UIA TextPattern (primary)
-│   └── clipboard_fallback.py    tier 2: deterministic clipboard automation (STUB —
-│                                lifecycle contract locked in before implementation)
-├── llm.py                       LM Studio client + lookup prompt (dictionary card shape)
-├── hotkey.py                    RegisterHotKey loop (minimal, Phase 0)
+│   └── clipboard_fallback.py    tier 2: deterministic clipboard automation fallback
+├── ui/
+│   ├── tray.py                  QSystemTrayIcon + multi-hotkey background bridge
+│   ├── popup.py                 Frameless near-cursor popup for Contextual Lookup
+│   ├── palette.py               Frameless interactive palette for Smart Paste
+│   ├── worker.py                LookupUIA capture & LLM streaming worker
+│   ├── paste_worker.py          Smart Paste LLM streaming worker
+│   └── positioning.py           Multi-monitor placement & DPI scaling fallback
+├── llm.py                       LM Studio client + lookup/paste prompts & spelling inference
+├── hotkey.py                    RegisterHotKey loop with multi-hotkey degradation
 ├── config.py                    settings + TOML override
 ├── log.py                       capture telemetry goes to stderr
 └── cli.py                       smoke / capture / lookup / listen
