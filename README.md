@@ -55,6 +55,20 @@ app-compatibility polish are still planned.
 - **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
 - **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete; Phase 4 (Speech Input / Voice-to-Transform) planned.
 
+## Demo
+
+Contextual Lookup explains a selected term in place:
+
+![Contextual Lookup popup](docs/assets/contextual-lookup.png)
+
+Smart Paste transforms copied text through a preview-first palette:
+
+<video src="docs/assets/smart-paste-demo.mp4" controls></video>
+
+> GitHub's rendering of repository-local videos can vary. If the video does not
+> render in the README, open [`docs/assets/smart-paste-demo.mp4`](docs/assets/smart-paste-demo.mp4)
+> directly.
+
 ## Privacy and data handling
 
 Contextual Intelligence is local-first by default.
@@ -71,20 +85,6 @@ If you configure LM Studio or another OpenAI-compatible endpoint on another
 machine, selected or copied text will be sent to that endpoint. Non-local
 `http://` endpoints are rejected; use the default local HTTP endpoint or an
 `https://` remote endpoint.
-
-## Demo
-
-Contextual Lookup explains a selected term in place:
-
-![Contextual Lookup popup](docs/assets/contextual-lookup.png)
-
-Smart Paste transforms copied text through a preview-first palette:
-
-<video src="docs/assets/smart-paste-demo.mp4" controls></video>
-
-> GitHub's rendering of repository-local videos can vary. If the video does not
-> render in the README, open [`docs/assets/smart-paste-demo.mp4`](docs/assets/smart-paste-demo.mp4)
-> directly.
 
 ## Requirements
 
