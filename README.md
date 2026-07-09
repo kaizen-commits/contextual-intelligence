@@ -1,3 +1,4 @@
+
 # Contextual Intelligence
 
 Windows-native, local-first contextual lookup: select a word anywhere in
@@ -57,13 +58,24 @@ app-compatibility polish are still planned.
 
 ## Demo
 
-Contextual Lookup explains a selected term in place:
-
-![Contextual Lookup popup](docs/assets/contextual-lookup.png)
-
-Smart Paste transforms copied text through a preview-first palette:
-
-<video src="docs/assets/smart-paste-demo.mp4" controls></video>
+<table border="0">
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <video src="https://github.com/user-attachments/assets/e396bf25-fde4-4e89-b26a-7bc751b769aa" width="100%" controls></video>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/assets/contextual-lookup.png" alt="Contextual Lookup explains a selected term in place" width="100%">
+    </td>
+  </tr>
+    <tr>
+    <td align="center" valign="top">
+      <p>Smart Paste transforms copied text through a preview-first palette.</p>
+    </td>
+    <td align="center" valign="top">
+      <p>Contextual Lookup explains a selected term in place.</p>
+    </td>
+  </tr>
+</table>
 
 > GitHub's rendering of repository-local videos can vary. If the video does not
 > render in the README, open [`docs/assets/smart-paste-demo.mp4`](docs/assets/smart-paste-demo.mp4)
