@@ -27,19 +27,6 @@ select text → hotkey → capture → validate → local model → popup / prev
 - **Contextual Lookup:** selected text and surrounding context become a compact explanation popup.
 - **Smart Paste:** clipboard text plus an instruction becomes a preview-first transformed result before copy/paste.
 
-## Current maturity
-
-This is a Windows-only, run-from-source developer preview. Contextual Lookup
-and Smart Paste are implemented and covered by automated/manual regression
-tests, but packaging, installer support, speech input, and broader
-app-compatibility polish are still planned.
-
-- **Project knowledge:** longer design notes are maintained in a local LLM Wiki / knowledge base; this repository keeps the public-facing implementation docs.
-- **Project rules:** [`PROJECT_RULES.md`](PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
-- **Manual QA:** [`docs/qa/manual-regression.md`](docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
-- **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
-- **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete; Phase 4 (Speech Input / Voice-to-Transform) planned.
-
 ## What it does
 
 - Explains selected words or short phrases in the context where they appear.
@@ -54,6 +41,19 @@ app-compatibility polish are still planned.
 - It does not automatically paste transformed text back into the source application.
 - It does not include a cloud fallback by default.
 - It is not a general screen reader or OCR tool.
+
+## Current maturity
+
+This is a Windows-only, run-from-source developer preview. Contextual Lookup
+and Smart Paste are implemented and covered by automated/manual regression
+tests, but packaging, installer support, speech input, and broader
+app-compatibility polish are still planned.
+
+- **Project knowledge:** longer design notes are maintained in a local LLM Wiki / knowledge base; this repository keeps the public-facing implementation docs.
+- **Project rules:** [`PROJECT_RULES.md`](PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
+- **Manual QA:** [`docs/qa/manual-regression.md`](docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
+- **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
+- **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete; Phase 4 (Speech Input / Voice-to-Transform) planned.
 
 ## Privacy and data handling
 
