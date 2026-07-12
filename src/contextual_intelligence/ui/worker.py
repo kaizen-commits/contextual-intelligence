@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -64,10 +65,16 @@ class LookupWorker(QThread):
         self._recent_copy = recent_copy
         self._prefer_recent_copy = prefer_recent_copy
         self._fallback_enabled = fallback_enabled
-        self._cancelled = False
+        # An Event, never reset inside run(): a cancel issued between start()
+        # and the thread's first instruction must stick.
+        self._cancel = threading.Event()
 
     def cancel(self) -> None:
-        self._cancelled = True
+        self._cancel.set()
+
+    @property
+    def was_cancelled(self) -> bool:
+        return self._cancel.is_set()
 
     def _recent_copy_payload(self) -> ContextPayload | None:
         """Handoff for text the app itself just copied (SCOPE-30).
@@ -97,7 +104,10 @@ class LookupWorker(QThread):
             return None
 
     def run(self) -> None:
-        self._cancelled = False
+        # Cancellation checkpoint: before any signal, capture, or LLM work — a
+        # pre-cancelled worker must make zero orchestrator and zero LLM calls.
+        if self._cancel.is_set():
+            return
         t_start = time.perf_counter()
         self.started_capture.emit()
 
@@ -111,6 +121,8 @@ class LookupWorker(QThread):
                 )
 
         if payload is None:
+            if self._cancel.is_set():  # checkpoint: before capture
+                return
             try:
                 payload = self._orchestrator.capture()
             except ProtectedFieldError as exc:
@@ -153,7 +165,7 @@ class LookupWorker(QThread):
                 return
 
         t_captured = time.perf_counter()
-        if self._cancelled:
+        if self._cancel.is_set():
             return
 
         self.capture_succeeded.emit(payload)
@@ -173,17 +185,19 @@ class LookupWorker(QThread):
         try:
             while True:
                 attempt += 1
+                if self._cancel.is_set():  # checkpoint: before each stream creation/retry
+                    break
                 got_visible = False
                 for chunk in self._llm_client.stream_lookup(payload):
                     if t_first_token is None:
                         t_first_token = time.perf_counter()
-                    if self._cancelled:
+                    if self._cancel.is_set():
                         break
                     n_chars += len(chunk)
                     if chunk.strip():
                         got_visible = True
                     self.token_received.emit(chunk)
-                if got_visible or self._cancelled or attempt > _EMPTY_RESPONSE_RETRIES:
+                if got_visible or self._cancel.is_set() or attempt > _EMPTY_RESPONSE_RETRIES:
                     break
                 log.warning(
                     "model returned empty response, retrying (attempt %d of %d)",
@@ -213,7 +227,7 @@ class LookupWorker(QThread):
             (t_end - t_first_token) if t_first_token is not None else 0.0,
             t_end - t_start,
             (f" attempts={attempt}" if attempt > 1 else "")
-            + (" (cancelled)" if self._cancelled else ""),
+            + (" (cancelled)" if self._cancel.is_set() else ""),
         )
-        if not self._cancelled:
+        if not self._cancel.is_set():
             self.finished_lookup.emit()

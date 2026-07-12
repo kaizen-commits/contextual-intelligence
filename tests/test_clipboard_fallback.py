@@ -1,5 +1,4 @@
 import pytest
-import ctypes
 import uiautomation as auto
 from unittest.mock import MagicMock
 

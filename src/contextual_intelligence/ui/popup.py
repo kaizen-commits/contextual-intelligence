@@ -176,8 +176,19 @@ class LookupPopupWindow(QWidget):
 
     def start_lookup(self, worker: LookupWorker) -> None:
         if self._worker is not None and self._worker.isRunning():
+            # No replacement while a worker lives: the shared orchestrator and
+            # clipboard-fallback state machine are not re-entrant.
             log.warning("Lookup already in progress, ignoring trigger")
             worker.deleteLater()
+            if self._worker.was_cancelled:
+                # Retiring worker (e.g. popup closed mid-stream): make the
+                # rejection visible rather than silently doing nothing.
+                self.status_label.setText("⏳ Finishing previous request…")
+                self.status_label.show()
+                if not self.isVisible():
+                    position_near_cursor(self)
+                    self.show()
+                self._resize_to_content()
             return
 
         if self._worker is not None:
@@ -204,14 +215,36 @@ class LookupPopupWindow(QWidget):
         self._worker.start()
 
     def cancel_lookup(self, timeout_ms: int = 2000) -> bool:
-        """Cancel the active worker and wait for it to exit (bounded wait)."""
+        """Cancel the active worker and wait for it to exit (bounded wait).
+
+        On timeout the worker reference is retained (never dropped while the
+        thread lives); `start_lookup` keeps rejecting replacements until it
+        finishes, and the tray's shutdown gate waits on it.
+        """
         if self._worker is not None and self._worker.isRunning():
             log.info("cancelling active worker thread")
             self._worker.cancel()
             return self._worker.wait(timeout_ms)
         return True
 
+    def request_cancel(self) -> None:
+        """Signal cancellation without waiting (shutdown path)."""
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.cancel()
+
+    def live_workers(self) -> list[LookupWorker]:
+        """Workers that have not finished; the tray's shutdown gate consumes this."""
+        return [w for w in (self._worker,) if w is not None and not w.isFinished()]
+
+    def _stale_signal(self) -> bool:
+        """True when a queued signal from a superseded worker arrives after
+        disconnect — Qt still delivers already-queued cross-thread signals."""
+        sender = self.sender()
+        return sender is not None and sender is not self._worker
+
     def _on_started(self) -> None:
+        if self._stale_signal():
+            return
         self._buffer = ""
         self.title_label.hide()
         self.def_label.hide()
@@ -223,6 +256,8 @@ class LookupPopupWindow(QWidget):
         clamp_to_screen(self)
 
     def _on_capture_succeeded(self, payload: ContextPayload) -> None:
+        if self._stale_signal():
+            return
         from contextual_intelligence.models import CaptureTier
         app = payload.app_name or "unknown app"
         if payload.tier == CaptureTier.CLIPBOARD:
@@ -238,6 +273,8 @@ class LookupPopupWindow(QWidget):
         clamp_to_screen(self)
 
     def _on_token(self, chunk: str) -> None:
+        if self._stale_signal():
+            return
         self._buffer += chunk
         lines = [line.strip() for line in self._buffer.split("\n") if line.strip()]
 
@@ -275,6 +312,8 @@ class LookupPopupWindow(QWidget):
         clamp_to_screen(self)
 
     def _on_finished(self) -> None:
+        if self._stale_signal():
+            return
         if self._buffer.strip():
             self.status_label.hide()
         else:
@@ -296,6 +335,8 @@ class LookupPopupWindow(QWidget):
         clamp_to_screen(self)
 
     def _on_error(self, msg: str) -> None:
+        if self._stale_signal():
+            return
         self.title_label.hide()
         self.def_label.hide()
         self.ctx_label.hide()

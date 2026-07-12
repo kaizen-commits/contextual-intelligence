@@ -81,7 +81,7 @@ def test_deprecation_warning_logged(tmp_path, monkeypatch, caplog):
     monkeypatch.setenv("CI_MAX_PASTE_INPUT_CHARS", "10000")
     import logging
     with caplog.at_level(logging.WARNING):
-        s = load_settings(path=tmp_path / "no-toml")
+        load_settings(path=tmp_path / "no-toml")
     assert any("CI_MAX_PASTE_INPUT_CHARS" in r.message for r in caplog.records)
 
 

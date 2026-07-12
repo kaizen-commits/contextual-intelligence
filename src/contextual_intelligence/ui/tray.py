@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -14,7 +15,12 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from contextual_intelligence.capture import CaptureOrchestrator, get_foreground_app_name
 from contextual_intelligence.config import Settings
-from contextual_intelligence.hotkey import LOOKUP_HOTKEY_ID, PASTE_HOTKEY_ID, run_hotkey_loop
+from contextual_intelligence.hotkey import (
+    LOOKUP_HOTKEY_ID,
+    PASTE_HOTKEY_ID,
+    WM_QUIT,
+    run_hotkey_loop,
+)
 from contextual_intelligence.llm import LlmClient
 from contextual_intelligence.models import MAX_LOOKUP_CHARS, RecentAppCopy
 from contextual_intelligence.ui.palette import PastePaletteWindow
@@ -22,6 +28,12 @@ from contextual_intelligence.ui.popup import LookupPopupWindow
 from contextual_intelligence.ui.worker import LookupWorker
 
 log = logging.getLogger(__name__)
+
+# Fixed shutdown grace before the watchdog hard-exits the process. Deliberately
+# a constant — deriving it from request_timeout_s (up to 300s) would let quit
+# appear hung for minutes, and a wedged cross-process UIA call never recovers
+# no matter how long we wait.
+SHUTDOWN_GRACE_S = 10.0
 
 
 def _create_default_icon() -> QIcon:
@@ -44,7 +56,13 @@ def _create_default_icon() -> QIcon:
 
 class HotkeyBridge(QObject):
     """Brings win32 RegisterHotKey messages from a daemon thread into the Qt event
-    loop safely via signals."""
+    loop safely via signals.
+
+    Shutdown handshake: the loop thread signals `_ready` once its message queue
+    exists (so WM_QUIT can actually be posted to it) and `_done` when the loop
+    has exited. `stop()` reports whether the thread really terminated — the
+    tray blocks normal Qt teardown on a False result.
+    """
 
     hotkey_pressed = Signal()  # legacy signal for lookup
     lookup_triggered = Signal()
@@ -55,9 +73,14 @@ class HotkeyBridge(QObject):
         super().__init__(parent)
         self.thread: threading.Thread | None = None
         self.thread_id: int | None = None
+        self._ready = threading.Event()
+        self._done = threading.Event()
+        self._stopping = threading.Event()
 
     def start(self, hotkey_map: dict[int, tuple[int, Callable[[], None]]] | None = None) -> None:
-        self.thread = threading.Thread(target=self._loop, args=(hotkey_map,), daemon=True)
+        self.thread = threading.Thread(
+            target=self._loop, args=(hotkey_map,), daemon=True, name="hotkey-loop"
+        )
         self.thread.start()
 
     def _loop(self, hotkey_map: dict[int, tuple[int, Callable[[], None]]] | None) -> None:
@@ -80,17 +103,33 @@ class HotkeyBridge(QObject):
                 hotkey_map=hotkey_map,
                 on_thread_id=_set_thread_id,
                 on_registration_failure=_on_fail,
+                on_ready=self._ready.set,
+                stopping=self._stopping,
             )
         except Exception as exc:
             log.error("hotkey loop stopped: %s", exc)
+        finally:
+            self._done.set()
 
-    def stop(self) -> None:
-        if self.thread_id is not None:
+    def stop(self) -> bool:
+        """Stop the message loop. Returns True when the thread has terminated."""
+        self._stopping.set()
+        if self.thread is None:
+            return True
+        if self._ready.wait(2.0) and self.thread_id is not None:
             import ctypes
 
-            ctypes.windll.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
-        if self.thread is not None:
-            self.thread.join(1.0)
+            posted = ctypes.windll.user32.PostThreadMessageW(self.thread_id, WM_QUIT, 0, 0)
+            if not posted:
+                log.warning(
+                    "PostThreadMessageW(WM_QUIT) failed for hotkey thread %s", self.thread_id
+                )
+        self.thread.join(2.0)
+        self._done.wait(0.5)
+        if self.thread.is_alive():
+            log.warning("hotkey thread did not terminate; deferring to the shutdown watchdog")
+            return False
+        return True
 
 
 class TrayApplication(QObject):
@@ -107,6 +146,12 @@ class TrayApplication(QObject):
         self.settings = settings
         self.orchestrator = orchestrator
         self.llm_client = llm_client
+
+        self._quitting = False
+        self._teardown_done = False
+        self._watchdog: threading.Timer | None = None
+        self._hotkey_stopped = True
+        self._gated_worker_ids: set[int] = set()
 
         self.app = QApplication.instance()
         if self.app is None:
@@ -142,19 +187,9 @@ class TrayApplication(QObject):
             ),
         }
         self.hotkey_bridge.start(hotkey_map)
-
-        # Warm up UI Automation in a background thread to avoid cold startup latency (~2s)
-        threading.Thread(target=self._warmup_uia, daemon=True).start()
-
-    def _warmup_uia(self) -> None:
-        try:
-            import uiautomation as auto
-
-            with auto.UIAutomationInitializerInThread(debug=False):
-                auto.GetFocusedControl()
-            log.info("UIA warmed up successfully")
-        except Exception as exc:
-            log.debug("UIA warm-up failed: %s", exc)
+        # No UIA warm-up thread: the ~1s first-lookup latency it saved is not
+        # worth the COM-init-vs-Qt-teardown race class it created (hardening
+        # pass, Rev 3 Slice C).
 
     def _setup_menu(self) -> None:
         menu = QMenu()
@@ -185,6 +220,8 @@ class TrayApplication(QObject):
         log.info("recorded smart_paste copy for lookup handoff (%d chars)", len(text))
 
     def trigger_lookup(self) -> None:
+        if self._quitting:
+            return
         log.info("triggering contextual lookup")
         delay_ms = 0
         palette_was_visible = self.paste_palette.isVisible()
@@ -194,6 +231,8 @@ class TrayApplication(QObject):
             delay_ms = 150  # Allow Windows OS time to restore foreground focus to the target app
 
         def _start() -> None:
+            if self._quitting:
+                return
             worker = LookupWorker(
                 self.orchestrator,
                 self.llm_client,
@@ -214,6 +253,8 @@ class TrayApplication(QObject):
             _start()
 
     def trigger_paste(self, source_app: str = "") -> None:
+        if self._quitting:
+            return
         log.info("triggering smart paste palette (source app: %s)", source_app or "unknown")
         if self.popup.isVisible():
             log.info("closing open Contextual Lookup popup before triggering paste")
@@ -234,15 +275,76 @@ class TrayApplication(QObject):
         return self.app.exec()
 
     def quit(self) -> None:
+        """Idempotent shutdown. Invariant: no Qt object is destroyed while any
+        owned worker (or the hotkey thread) is still running — teardown is
+        gated on their exit, and the watchdog hard-exits (skipping all
+        destructors) if they never do."""
+        if self._quitting:
+            return
+        self._quitting = True
         log.info("quitting tray app")
-        self.hotkey_bridge.stop()
 
+        # Armed before anything can block; an independent daemon timer because
+        # a QTimer needs the (possibly blocked) GUI event loop to fire.
+        self._watchdog = threading.Timer(SHUTDOWN_GRACE_S, self._on_shutdown_watchdog)
+        self._watchdog.daemon = True
+        self._watchdog.start()
+
+        self._hotkey_stopped = bool(self.hotkey_bridge.stop())
+
+        # Cooperative cancel first, then close the LLM client to abort any
+        # stream blocked in network I/O (acceleration, not proof: it cannot
+        # unblock a wedged cross-process UIA capture).
+        self.popup.request_cancel()
+        self.paste_palette.request_cancel()
+        self.llm_client.close()
+
+        # Bounded waits keep the common case synchronous; a worker that
+        # outlives them is retained and gates teardown via its finished signal.
         if not self.popup.cancel_lookup(2000):
-            log.warning("lookup worker thread did not stop within 2 seconds; proceeding anyway")
+            log.warning("lookup worker did not stop within 2 seconds; gating teardown on it")
+        if not self.paste_palette.cancel_worker(2000):
+            log.warning("paste worker did not stop within 2 seconds; gating teardown on it")
 
-        self.paste_palette.cancel_worker(2000)
+        self._try_finish_quit()
 
+    def _live_shutdown_blockers(self) -> list[Any]:
+        return [
+            w
+            for w in (*self.popup.live_workers(), *self.paste_palette.live_workers())
+            if w.isRunning()
+        ]
+
+    def _try_finish_quit(self) -> None:
+        if self._teardown_done:
+            return
+        blockers = self._live_shutdown_blockers()
+        if blockers or not self._hotkey_stopped:
+            for worker in blockers:
+                if id(worker) not in self._gated_worker_ids:
+                    self._gated_worker_ids.add(id(worker))
+                    worker.finished.connect(self._try_finish_quit)
+            log.warning(
+                "shutdown gated on %d running worker(s)%s; watchdog in %.0fs",
+                len(blockers),
+                "" if self._hotkey_stopped else " and the hotkey thread",
+                SHUTDOWN_GRACE_S,
+            )
+            return
+        self._teardown_done = True
         self.popup.close()
         self.paste_palette.close()
         self.tray_icon.hide()
+        if self._watchdog is not None:
+            self._watchdog.cancel()
         self.app.quit()
+
+    def _on_shutdown_watchdog(self) -> None:
+        names = ", ".join(t.name for t in threading.enumerate())
+        log.critical(
+            "shutdown watchdog fired after %.0fs; live threads: %s — hard exit without "
+            "running destructors",
+            SHUTDOWN_GRACE_S,
+            names,
+        )
+        os._exit(1)

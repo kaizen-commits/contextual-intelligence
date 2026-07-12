@@ -1,5 +1,4 @@
 import win32con
-import pytest
 import ctypes
 
 from contextual_intelligence import clipboard
