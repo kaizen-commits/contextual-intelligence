@@ -12,6 +12,10 @@ If you configure the endpoint to use another machine or a cloud service, selecte
 
 The app should not persist clipboard history or selected text to disk. Diagnostic logs should describe capture tier, timing, and failure categories rather than storing user content.
 
+## Configuration trust
+
+The application never reads configuration from the current working directory or the launch directory (e.g. from an implicit `.env` file). Endpoint addresses, API keys, and other settings are loaded only from the user's secure `%APPDATA%` directory, the process environment variables, or an explicitly supplied `--env-file` argument at startup. This prevents arbitrary launch locations (such as a shared network drive or Downloads folder) from hijacking the configuration and redirecting your captured text to malicious endpoints.
+
 ## Reporting vulnerabilities
 
 Please report security issues privately instead of opening a public issue with exploit details. Use GitHub's private vulnerability reporting / private security advisory flow for this repository if available. If private advisories are not enabled yet, contact the maintainer through their GitHub profile and include:

@@ -31,7 +31,7 @@ from contextual_intelligence.clipboard import (
 )
 from contextual_intelligence.config import Settings
 from contextual_intelligence.llm import LlmClient
-from contextual_intelligence.models import PastePayload, PasteResult
+from contextual_intelligence.models import MAX_PASTE_INPUT_CHARS, PastePayload, PasteResult
 from contextual_intelligence.paste_presets import (
     BUILT_IN_PASTE_PRESETS,
     PastePreset,
@@ -288,7 +288,7 @@ class PastePaletteWindow(QWidget):
             return
 
         # 3. Length check (reject at open/validate, do not truncate)
-        max_chars = self._settings.max_paste_input_chars
+        max_chars = MAX_PASTE_INPUT_CHARS
         if len(text) > max_chars:
             self._show_error(
                 f"❌ Clipboard text too long ({len(text):,} chars > {max_chars:,} limit)."

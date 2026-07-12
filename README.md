@@ -54,7 +54,7 @@ app-compatibility polish are still planned.
 - **Project rules:** [`PROJECT_RULES.md`](PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
 - **Manual QA:** [`docs/qa/manual-regression.md`](docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
 - **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
-- **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete; Phase 4 (Speech Input / Voice-to-Transform) planned.
+- **Status:** Phase 2 (Smart Paste MVP) complete; Phase 3 core robustness complete; startup & packaging polish in progress (this hardening pass); Phase 4 (Speech Input / Voice-to-Transform) planned.
 
 ## Demo
 
@@ -108,9 +108,9 @@ networks you trust.
   or on a trusted private-LAN IP configured through `LMSTUDIO_BASE_URL`
   (default model: `google/gemma-4-e4b`)
 
-Override the model, endpoint, token limits, or API key with
-`%APPDATA%\contextual-intelligence\config.toml` or environment variables such
-as `LMSTUDIO_BASE_URL`, `LMSTUDIO_API_KEY`, and `CI_MODEL`.
+Override the model, endpoint, token limits, or API key using the configuration file `%APPDATA%\contextual-intelligence\config.toml` or process environment variables (such as `LMSTUDIO_BASE_URL`, `LMSTUDIO_API_KEY`, and `CI_MODEL`).
+
+For development and debugging, you can load settings from an explicit environment file by passing the `--env-file PATH` option to the command line at startup. Note that configuration files (including `.env` files) are never loaded implicitly from the current working directory.
 
 ### First-run checklist
 

@@ -76,7 +76,7 @@ def test_open_palette_rejects_oversized_clipboard(qapp, monkeypatch):
         "contextual_intelligence.ui.palette.read_text_clipboard",
         lambda: "x" * 10000,
     )
-    settings = Settings(max_paste_input_chars=8000)
+    settings = Settings()
     llm = MockLlmClient()
     palette = PastePaletteWindow(settings, llm)
 
