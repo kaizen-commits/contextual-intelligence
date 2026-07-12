@@ -51,8 +51,8 @@ tests, but packaging, installer support, speech input, and broader
 app-compatibility polish are still planned.
 
 - **Project knowledge:** longer design notes are maintained in a local LLM Wiki / knowledge base; this repository keeps the public-facing implementation docs.
-- **Project rules:** [`PROJECT_RULES.md`](PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
-- **Manual QA:** [`docs/qa/manual-regression.md`](docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
+- **Project rules:** [`PROJECT_RULES.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
+- **Manual QA:** [`docs/qa/manual-regression.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
 - **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
 - **Status:** Phase 2 (Smart Paste MVP) complete; Phase 3 core robustness complete; startup & packaging polish in progress (this hardening pass); Phase 4 (Speech Input / Voice-to-Transform) planned.
 
@@ -64,7 +64,7 @@ app-compatibility polish are still planned.
       <video src="https://github.com/user-attachments/assets/e396bf25-fde4-4e89-b26a-7bc751b769aa" width="100%" controls></video>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="docs/assets/contextual-lookup.png" alt="Contextual Lookup explains a selected term in place" width="100%">
+      <img src="https://raw.githubusercontent.com/kaizen-commits/contextual-intelligence/main/docs/assets/contextual-lookup.png" alt="Contextual Lookup explains a selected term in place" width="100%">
     </td>
   </tr>
     <tr>
@@ -78,7 +78,7 @@ app-compatibility polish are still planned.
 </table>
 
 > GitHub's rendering of repository-local videos can vary. If the video does not
-> render in the README, open [`docs/assets/smart-paste-demo.mp4`](docs/assets/smart-paste-demo.mp4)
+> render in the README, open [`docs/assets/smart-paste-demo.mp4`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/docs/assets/smart-paste-demo.mp4)
 > directly.
 
 ## Privacy and data handling
@@ -99,6 +99,41 @@ accepted only for loopback addresses and literal private/link-local IP addresses
 public IPs and hostname-based non-local endpoints require HTTPS. Traffic to a
 private-LAN HTTP endpoint is not encrypted, so use only infrastructure and
 networks you trust.
+
+## Clipboard fallback (opt-in)
+
+Contextual Lookup is UIA-first. When an app does not expose selected text
+through Windows accessibility, a clipboard-based capture fallback exists — but
+it is **disabled by default** and must be explicitly enabled in
+`%APPDATA%\contextual-intelligence\config.toml`:
+
+```toml
+enable_clipboard_fallback = true
+```
+
+When enabled, invoking Lookup authorizes a temporary synthetic copy
+(`Ctrl+C` sent to the focused app) only after UIA capture fails, and the
+popup visibly identifies results captured this way. Before enabling it,
+understand exactly what it does:
+
+- Your clipboard text is **temporarily replaced** during the capture and then
+  restored.
+- Rich clipboard formats (HTML/RTF metadata alongside text) are **not
+  preserved** — only the text is restored. Captures are refused outright when
+  the clipboard holds images, files, audio, or other content that could not be
+  restored.
+- **Windows Clipboard History (Win+V), cloud clipboard sync, and third-party
+  clipboard managers may observe the temporary selection** — successful
+  restoration does not remove it from those histories.
+- If another application changes the clipboard during the capture window, its
+  content is **never overwritten**: restoration happens only when the change
+  can be positively attributed to the target app and the clipboard is still in
+  the state our own copy produced.
+- If restoration fails, the app **tells you immediately** with actionable
+  guidance instead of continuing silently.
+
+Smart Paste's guarantee is separate and unchanged: it reads the clipboard when
+opened and does not mutate it until you explicitly click Copy.
 
 ## Requirements
 
@@ -242,7 +277,7 @@ failure reason so fallback work is driven by telemetry, not guesses.
 
 ## Security notes
 
-See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and endpoint trust notes.
+See [`SECURITY.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/SECURITY.md) for vulnerability reporting and endpoint trust notes.
 
 ## Third-party licensing
 
@@ -265,4 +300,4 @@ Final product decisions, testing, integration, and release responsibility remain
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/LICENSE).

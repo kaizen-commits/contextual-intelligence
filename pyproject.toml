@@ -1,13 +1,31 @@
 [project]
 name = "contextual-intelligence"
-version = "0.1.0"
+version = "0.1.0.dev1"
 description = "Windows-native local-first contextual lookup and preview-first text transformation via LM Studio."
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Kaizen", email = "6035483+kaizen-commits@users.noreply.github.com" }
 ]
+# No upper bound (P4): untested interpreters are gated by the CI matrix, not
+# by metadata that would make the package quietly uninstallable.
 requires-python = ">=3.12"
+keywords = ["windows", "clipboard", "llm", "local-first", "accessibility", "lm-studio"]
+# Wheel tag decision (P3): the package is pure Python, so the wheel is
+# py3-none-any by design; Windows-onlyness is enforced by the pywin32
+# dependency (no non-Windows wheels), the classifiers below, and the
+# sys.platform guard in cli.main(). No license classifier: the SPDX
+# `license` expression above supersedes it (PEP 639).
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Operating System :: Microsoft :: Windows",
+    "Environment :: Win32 (MS Windows)",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Utilities",
+]
 dependencies = [
     "openai>=2.44.0",
     "pydantic>=2.13.4",
@@ -15,6 +33,11 @@ dependencies = [
     "pywin32>=312",
     "uiautomation>=2.0.29",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kaizen-commits/contextual-intelligence"
+Repository = "https://github.com/kaizen-commits/contextual-intelligence"
+Issues = "https://github.com/kaizen-commits/contextual-intelligence/issues"
 
 [project.scripts]
 ci-lookup = "contextual_intelligence.cli:main"

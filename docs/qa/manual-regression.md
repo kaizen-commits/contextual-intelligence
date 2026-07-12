@@ -65,6 +65,18 @@ Record results in the task tracker as pass/fail notes with the branch, commit, a
 - [ ] Slow response: cancel/close paths remain safe and late worker output does not corrupt the current UI.
 - [ ] Logs contain technical reasons while the user-facing UI stays plain-language.
 
+## Hardening pass: startup, lifecycle, and fallback consent
+
+- [ ] With `enable_clipboard_fallback` absent/false (the default), trigger Lookup in an app without UIA TextPattern (e.g. Obsidian reading view); the guidance card names clipboard fallback and where to enable it, and no synthetic copy occurs.
+- [ ] With `enable_clipboard_fallback = true`, the same lookup succeeds and the popup caption shows "captured via clipboard fallback".
+- [ ] Fallback with an initially empty clipboard: after the capture, the clipboard is empty again (not holding the selection).
+- [ ] Fallback with text on the clipboard: after the capture, the exact original text is back on the clipboard.
+- [ ] Restoration failure: run `uv run python scripts/qa/clipboard_locker.py`, then trigger a fallback capture within 30s. The popup shows the clipboard-restoration-failed guidance and no LLM answer. (The locker is phase-aware: it waits for the synthetic copy before locking — a locker held from the start only exercises the pre-mutation UNAVAILABLE branch.)
+- [ ] Launch `ci-lookup tray` twice; the second instance prints "already running" and exits without touching the tray.
+- [ ] With another tool owning `Ctrl+Alt+V` (e.g. an AutoHotkey one-liner), start the tray app; a balloon warning names the failed shortcut, the tooltip lists only the working one, and Lookup still works.
+- [ ] Quit the tray app during an in-flight lookup; the app exits cleanly within seconds, no zombie process remains, and the log shows no shutdown-watchdog CRITICAL entry.
+- [ ] From a directory outside the repository (with `LMSTUDIO_*` cleared from the environment), `ci-lookup smoke` succeeds using `%APPDATA%\contextual-intelligence\config.toml` alone.
+
 ## Graceful degradation acceptance framework
 
 Add these acceptance criteria to new feature/bug issues unless explicitly irrelevant:
