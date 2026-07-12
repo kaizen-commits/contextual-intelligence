@@ -117,6 +117,17 @@ def cmd_listen(settings: Settings) -> int:
 
 
 def cmd_tray(settings: Settings) -> int:
+    # Imported lazily: the guard module binds kernel32 at import, and cli.py
+    # must stay importable on any platform (the sys.platform guard depends on it).
+    from contextual_intelligence.instance import acquire_single_instance_lock
+
+    if not acquire_single_instance_lock():
+        print(
+            "contextual-intelligence is already running (check the system tray)",
+            file=sys.stderr,
+        )
+        return 1
+
     from contextual_intelligence.ui.tray import TrayApplication
 
     app = TrayApplication(

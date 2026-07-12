@@ -21,6 +21,7 @@ from contextual_intelligence.hotkey import (
     WM_QUIT,
     run_hotkey_loop,
 )
+from contextual_intelligence.instance import release_instance_lock
 from contextual_intelligence.llm import LlmClient
 from contextual_intelligence.models import MAX_LOOKUP_CHARS, RecentAppCopy
 from contextual_intelligence.ui.palette import PastePaletteWindow
@@ -152,6 +153,7 @@ class TrayApplication(QObject):
         self._watchdog: threading.Timer | None = None
         self._hotkey_stopped = True
         self._gated_worker_ids: set[int] = set()
+        self._failed_hotkeys: set[int] = set()
 
         self.app = QApplication.instance()
         if self.app is None:
@@ -206,6 +208,28 @@ class TrayApplication(QObject):
             name,
             char_rep,
         )
+        # A log line is invisible in a tray app: surface the degradation where
+        # the user can see it, and keep the tooltip truthful about what works.
+        self._failed_hotkeys.add(hid)
+        if {LOOKUP_HOTKEY_ID, PASTE_HOTKEY_ID} <= self._failed_hotkeys:
+            self.tray_icon.showMessage(
+                "Shortcut unavailable",
+                "No shortcuts could be registered — Contextual Intelligence is running "
+                "but idle. Quit, free Ctrl+Alt+D / Ctrl+Alt+V, and restart.",
+                QSystemTrayIcon.MessageIcon.Warning,
+                5000,
+            )
+            self.tray_icon.setToolTip("Contextual Intelligence (hotkeys unavailable)")
+        else:
+            self.tray_icon.showMessage(
+                "Shortcut unavailable",
+                f"Ctrl+Alt+{char_rep} ({name}) is owned by another app — that feature "
+                "is disabled until it is freed.",
+                QSystemTrayIcon.MessageIcon.Warning,
+                5000,
+            )
+            working = "Ctrl+Alt+V" if hid == LOOKUP_HOTKEY_ID else "Ctrl+Alt+D"
+            self.tray_icon.setToolTip(f"Contextual Intelligence ({working})")
 
     def _record_app_copy(self, text: str) -> None:
         """Remember short text copied out of the Smart Paste palette so a
@@ -335,6 +359,7 @@ class TrayApplication(QObject):
         self.popup.close()
         self.paste_palette.close()
         self.tray_icon.hide()
+        release_instance_lock()
         if self._watchdog is not None:
             self._watchdog.cancel()
         self.app.quit()
