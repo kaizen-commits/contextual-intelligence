@@ -202,6 +202,7 @@ class TrayApplication(QObject):
                 # Looking up from the palette: the source app's leftover
                 # selection is stale, so a valid palette copy takes priority.
                 prefer_recent_copy=palette_was_visible,
+                fallback_enabled=self.settings.enable_clipboard_fallback,
             )
             self.popup.start_lookup(worker)
 

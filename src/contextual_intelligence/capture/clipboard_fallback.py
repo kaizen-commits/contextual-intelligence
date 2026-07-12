@@ -23,15 +23,31 @@ from enum import StrEnum
 from ctypes import wintypes
 
 from contextual_intelligence.clipboard import (
-    has_high_value_non_text_format as _has_non_text_format,
+    snapshot_clipboard,
+    restore_clipboard_if_owned,
     read_text_clipboard as _save_clipboard,
-    write_text_clipboard as _restore_clipboard,
 )
-from contextual_intelligence.models import CaptureError, CaptureTier, ContextPayload
+from contextual_intelligence.models import (
+    SnapshotStatus,
+    RestoreOutcome,
+    RestoreFailureFlavor,
+    CaptureError,
+    CaptureIntegrityError,
+    ProtectedFieldError,
+    CaptureTier,
+    ContextPayload,
+)
 
 log = logging.getLogger(__name__)
 
 user32 = ctypes.windll.user32
+user32.GetClipboardOwner.restype = wintypes.HWND
+user32.GetClipboardOwner.argtypes = []
+user32.GetClipboardSequenceNumber.restype = wintypes.DWORD
+user32.GetClipboardSequenceNumber.argtypes = []
+user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+
 VK_CONTROL = 0x11
 VK_MENU = 0x12
 VK_SHIFT = 0x10
@@ -39,6 +55,7 @@ VK_LWIN = 0x5B
 VK_RWIN = 0x5C
 VK_C = 0x43
 KEYEVENTF_KEYUP = 0x0002
+
 
 # Ctypes structures for SendInput
 class KEYBDINPUT(ctypes.Structure):
@@ -50,6 +67,7 @@ class KEYBDINPUT(ctypes.Structure):
         ("dwExtraInfo", ctypes.c_ulonglong),
     ]
 
+
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [
         ("dx", wintypes.LONG),
@@ -60,12 +78,14 @@ class MOUSEINPUT(ctypes.Structure):
         ("dwExtraInfo", ctypes.c_ulonglong),
     ]
 
+
 class HARDWAREINPUT(ctypes.Structure):
     _fields_ = [
         ("uMsg", wintypes.DWORD),
         ("wParamL", wintypes.WORD),
         ("wParamH", wintypes.WORD),
     ]
+
 
 class INPUT_UNION(ctypes.Union):
     _fields_ = [
@@ -74,11 +94,13 @@ class INPUT_UNION(ctypes.Union):
         ("hi", HARDWAREINPUT),
     ]
 
+
 class INPUT(ctypes.Structure):
     _fields_ = [
         ("type", wintypes.DWORD),
         ("union", INPUT_UNION),
     ]
+
 
 INPUT_KEYBOARD = 1
 
@@ -94,20 +116,30 @@ def _send_inputs(inputs: list[INPUT]) -> None:
     input_array = (INPUT * n_inputs)(*inputs)
     sent = user32.SendInput(n_inputs, ctypes.byref(input_array), ctypes.sizeof(INPUT))
     if sent != n_inputs:
+        # Send best-effort compensating key-ups for VK_CONTROL and VK_C to avoid stuck keys
+        compensating = []
+        for vk in (VK_C, VK_CONTROL):
+            compensating.append(
+                INPUT(
+                    type=INPUT_KEYBOARD,
+                    union=INPUT_UNION(
+                        ki=KEYBDINPUT(wVk=vk, wScan=0, dwFlags=KEYEVENTF_KEYUP, time=0, dwExtraInfo=0)
+                    ),
+                )
+            )
+        comp_array = (INPUT * len(compensating))(*compensating)
+        user32.SendInput(len(compensating), ctypes.byref(comp_array), ctypes.sizeof(INPUT))
+
         raise CaptureError(
             f"SendInput failed: sent {sent} of {n_inputs} inputs",
             CaptureTier.CLIPBOARD,
         )
 
 
-
-
 class ListenerState(StrEnum):
     DISARMED = "disarmed"
     ARMED = "armed"
     CAPTURING = "capturing"
-
-
 
 
 def _clear_modifiers() -> None:
@@ -205,18 +237,91 @@ class ClipboardFallbackProvider:
             self.disarm()
 
     def _do_capture(self) -> ContextPayload:
-        if _has_non_text_format():
-            raise CaptureError(
-                "clipboard holds non-text content; fallback skipped",
-                CaptureTier.CLIPBOARD,
-            )
-        saved_text = _save_clipboard()
-        seq_before = user32.GetClipboardSequenceNumber()
+        # 1. Protected-field preflight
+        import uiautomation as auto
+        from contextual_intelligence.capture.uia import _process_image_name
 
+        with auto.UIAutomationInitializerInThread(debug=False):
+            try:
+                focused = auto.GetFocusedControl()
+            except Exception as exc:
+                raise CaptureError(
+                    f"focused control resolution failed during preflight: {exc}",
+                    CaptureTier.CLIPBOARD,
+                )
+
+            if focused is None:
+                raise CaptureError("no focused control during preflight", CaptureTier.CLIPBOARD)
+
+            try:
+                if getattr(focused, "IsPassword", False):
+                    raise ProtectedFieldError(
+                        "focused control is a password field; fallback aborted",
+                        CaptureTier.CLIPBOARD,
+                    )
+                target_pid = focused.ProcessId
+                target_image = _process_image_name(target_pid)
+                top = focused.GetTopLevelControl()
+                target_hwnd = top.NativeWindowHandle if top else 0
+            except Exception as exc:
+                if isinstance(exc, ProtectedFieldError):
+                    raise
+                raise CaptureError(
+                    f"failed to read UIA properties during preflight: {exc}",
+                    CaptureTier.CLIPBOARD,
+                )
+
+        # 2. Snapshot
+        snapshot = snapshot_clipboard()
+        if snapshot.status == SnapshotStatus.UNAVAILABLE:
+            raise CaptureError("clipboard is unavailable/locked", CaptureTier.CLIPBOARD)
+        if snapshot.status == SnapshotStatus.UNSUPPORTED:
+            raise CaptureError("clipboard contains unsupported formats", CaptureTier.CLIPBOARD)
+
+        # 3. Pre-send drift check + revalidation
+        seq_before = user32.GetClipboardSequenceNumber()
+        if seq_before != snapshot.sequence:
+            log.info("clipboard sequence drifted pre-send; taking new snapshot")
+            snapshot = snapshot_clipboard()
+            if snapshot.status == SnapshotStatus.UNAVAILABLE:
+                raise CaptureError("clipboard is unavailable/locked after drift", CaptureTier.CLIPBOARD)
+            if snapshot.status == SnapshotStatus.UNSUPPORTED:
+                raise CaptureError("clipboard contains unsupported formats after drift", CaptureTier.CLIPBOARD)
+            seq_before = user32.GetClipboardSequenceNumber()
+            if seq_before != snapshot.sequence:
+                raise CaptureError("clipboard sequence drifted repeatedly; aborting", CaptureTier.CLIPBOARD)
+
+        with auto.UIAutomationInitializerInThread(debug=False):
+            try:
+                refocused = auto.GetFocusedControl()
+                if refocused is None:
+                    raise CaptureError("no focused control during revalidation", CaptureTier.CLIPBOARD)
+                if refocused.ProcessId != target_pid:
+                    raise CaptureError("focused process changed during preflight", CaptureTier.CLIPBOARD)
+                retop = refocused.GetTopLevelControl()
+                re_hwnd = retop.NativeWindowHandle if retop else 0
+                if re_hwnd != target_hwnd:
+                    raise CaptureError("focused top-level window changed during preflight", CaptureTier.CLIPBOARD)
+                if getattr(refocused, "IsPassword", False):
+                    raise ProtectedFieldError(
+                        "focused control became a password field; fallback aborted",
+                        CaptureTier.CLIPBOARD,
+                    )
+            except Exception as exc:
+                if isinstance(exc, (ProtectedFieldError, CaptureError)):
+                    raise
+                raise CaptureError(
+                    f"target revalidation failed: {exc}",
+                    CaptureTier.CLIPBOARD,
+                )
+
+        owned_seq = None
+        copied_text = ""
         try:
+            # 4. Copy
             _send_ctrl_c()
 
-            # Poll up to 400ms for sequence number change (PowerToys lesson)
+            # Poll up to 400ms for sequence number change
             start_wait = time.perf_counter()
             seq_changed = False
             while time.perf_counter() - start_wait < 0.4:
@@ -231,9 +336,64 @@ class ClipboardFallbackProvider:
                     CaptureTier.CLIPBOARD,
                 )
 
-            copied_text = _save_clipboard() or ""
+            # 5. Attribution
+            owner_hwnd = user32.GetClipboardOwner()
+            if not owner_hwnd:
+                raise CaptureError(
+                    "clipboard changed but owner window was NULL; unattributed",
+                    CaptureTier.CLIPBOARD,
+                )
+
+            owner_pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(owner_hwnd, ctypes.pointer(owner_pid))
+            if not owner_pid.value:
+                raise CaptureError(
+                    "clipboard changed but owner PID was invalid; unattributed",
+                    CaptureTier.CLIPBOARD,
+                )
+
+            owner_image = _process_image_name(owner_pid.value)
+            if not owner_image or owner_image.lower() != target_image.lower():
+                raise CaptureError(
+                    f"clipboard changed but owner image ({owner_image}) does not match target ({target_image}); unattributed",
+                    CaptureTier.CLIPBOARD,
+                )
+
+            owned_seq = user32.GetClipboardSequenceNumber()
+
+            # 6. Owned read
+            copied_text = _save_clipboard()
+            if copied_text is None:
+                raise CaptureError(
+                    "failed to read copied text from clipboard",
+                    CaptureTier.CLIPBOARD,
+                )
+
+            # Stable read check
+            seq_after_read = user32.GetClipboardSequenceNumber()
+            if seq_after_read != owned_seq:
+                raise CaptureError(
+                    "clipboard sequence changed during read; interference detected",
+                    CaptureTier.CLIPBOARD,
+                )
+
         finally:
-            _restore_clipboard(saved_text)
+            # 7. Restore
+            outcome = restore_clipboard_if_owned(snapshot, owned_seq)
+            if outcome == RestoreOutcome.EXTERNAL_CHANGE:
+                log.warning("clipboard changed externally during fallback capture; leaving it untouched")
+            elif outcome == RestoreOutcome.FAILED:
+                raise CaptureIntegrityError(
+                    "clipboard restore failed; captured selection remains on clipboard",
+                    RestoreFailureFlavor.NEVER_WROTE,
+                    CaptureTier.CLIPBOARD,
+                )
+            elif outcome == RestoreOutcome.FAILED_CLEARED:
+                raise CaptureIntegrityError(
+                    "clipboard restore failed; original content lost, clipboard cleared",
+                    RestoreFailureFlavor.CLEARED,
+                    CaptureTier.CLIPBOARD,
+                )
 
         if not copied_text or not copied_text.strip():
             raise CaptureError(
@@ -243,15 +403,13 @@ class ClipboardFallbackProvider:
 
         before = ""
         after = ""
-        app_name = ""
+        app_name = target_image
         window_title = ""
         try:
-            import uiautomation as auto
             with auto.UIAutomationInitializerInThread(debug=False):
+                # Retrieve control again in UIA context to extract document context
                 focused = auto.GetFocusedControl()
-                if focused:
-                    from contextual_intelligence.capture.uia import _process_image_name
-                    app_name = _process_image_name(focused.ProcessId)
+                if focused and focused.ProcessId == target_pid:
                     top = focused.GetTopLevelControl()
                     window_title = (top.Name if top else "") or ""
 
@@ -300,4 +458,3 @@ class ArmedClipboardCapture:
             return self.provider.capture()
         finally:
             self.provider.disarm()
-

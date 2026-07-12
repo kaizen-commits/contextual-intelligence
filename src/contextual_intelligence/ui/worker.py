@@ -20,6 +20,9 @@ from contextual_intelligence.models import (
     MAX_LOOKUP_CHARS,
     RECENT_COPY_TTL_SECONDS,
     RecentAppCopy,
+    ProtectedFieldError,
+    CaptureIntegrityError,
+    RestoreFailureFlavor,
 )
 
 log = logging.getLogger(__name__)
@@ -53,15 +56,14 @@ class LookupWorker(QThread):
         parent: Any | None = None,
         recent_copy: RecentAppCopy | None = None,
         prefer_recent_copy: bool = False,
+        fallback_enabled: bool = False,
     ) -> None:
         super().__init__(parent)
         self._orchestrator = orchestrator
         self._llm_client = llm_client
         self._recent_copy = recent_copy
-        # When lookup is triggered while the palette is visible, the source
-        # app's leftover selection is stale — a valid in-app copy wins over
-        # capture instead of only backstopping its failure (SCOPE-30 QA).
         self._prefer_recent_copy = prefer_recent_copy
+        self._fallback_enabled = fallback_enabled
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -111,11 +113,35 @@ class LookupWorker(QThread):
         if payload is None:
             try:
                 payload = self._orchestrator.capture()
+            except ProtectedFieldError as exc:
+                log.warning("protected field capture blocked after %.2fs: %s", time.perf_counter() - t_start, exc)
+                self.error_occurred.emit("Lookup is disabled in password and protected fields for your privacy.")
+                return
+            except CaptureIntegrityError as exc:
+                log.warning("capture integrity error after %.2fs: %s", time.perf_counter() - t_start, exc)
+                if exc.flavor == RestoreFailureFlavor.CLEARED:
+                    self.error_occurred.emit(
+                        "Clipboard restoration failed. Your original clipboard text could not be "
+                        "put back and the clipboard has been cleared."
+                    )
+                else:
+                    self.error_occurred.emit(
+                        "Clipboard restoration failed. The selected text may still be on your clipboard. "
+                        "Copy something else or clear it (Win+V -> Clear all) before continuing."
+                    )
+                return
             except CaptureError as exc:
                 log.warning("capture failed after %.2fs: %s", time.perf_counter() - t_start, exc)
                 payload = self._recent_copy_payload()
                 if payload is None:
-                    self.error_occurred.emit(_CAPTURE_FAILED_GUIDANCE)
+                    if self._fallback_enabled:
+                        self.error_occurred.emit(_CAPTURE_FAILED_GUIDANCE)
+                    else:
+                        self.error_occurred.emit(
+                            "Lookup needs an active selection, and this app doesn't expose one to "
+                            "Windows accessibility. You can enable the clipboard-fallback capture in config.toml "
+                            "(see README: Clipboard fallback) — it briefly copies your selection."
+                        )
                     return
                 log.info(
                     "all capture tiers failed; using recent Smart Paste copy handoff (%d chars)",

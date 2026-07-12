@@ -223,7 +223,10 @@ class LookupPopupWindow(QWidget):
         clamp_to_screen(self)
 
     def _on_capture_succeeded(self, payload: ContextPayload) -> None:
+        from contextual_intelligence.models import CaptureTier
         app = payload.app_name or "unknown app"
+        if payload.tier == CaptureTier.CLIPBOARD:
+            app = f"{app} (captured via clipboard fallback)"
         self._selected_chars_len = len(payload.selected_text)
         display_text = payload.selected_text
         if len(display_text) > 40:

@@ -49,13 +49,47 @@ class RecentAppCopy:
     source: Literal["smart_paste"]
 
 
+class SnapshotStatus(StrEnum):
+    UNAVAILABLE = "unavailable"
+    EMPTY = "empty"
+    TEXT = "text"
+    UNSUPPORTED = "unsupported"
+
+
+class RestoreOutcome(StrEnum):
+    NO_OWNERSHIP = "no_ownership"
+    EXTERNAL_CHANGE = "external_change"
+    RESTORED = "restored"
+    FAILED = "failed"
+    FAILED_CLEARED = "failed_cleared"
+
+
+class RestoreFailureFlavor(StrEnum):
+    NEVER_WROTE = "never_wrote"
+    CLEARED = "cleared"
+
+
 class CaptureError(Exception):
     """A capture attempt failed. `reason` is logged as telemetry."""
 
     def __init__(self, reason: str, tier: CaptureTier | None = None):
         self.reason = reason
         self.tier = tier
+        self.is_terminal = False
         super().__init__(reason if tier is None else f"[{tier}] {reason}")
+
+
+class ProtectedFieldError(CaptureError):
+    def __init__(self, reason: str, tier: CaptureTier | None = None):
+        super().__init__(reason, tier)
+        self.is_terminal = True
+
+
+class CaptureIntegrityError(CaptureError):
+    def __init__(self, reason: str, flavor: RestoreFailureFlavor, tier: CaptureTier | None = None):
+        self.flavor = flavor
+        super().__init__(reason, tier)
+        self.is_terminal = True
 
 
 def _looks_like_mojibake(text: str) -> bool:
