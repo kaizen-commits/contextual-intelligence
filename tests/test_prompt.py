@@ -4,7 +4,12 @@ from contextual_intelligence.llm import (
     build_lookup_prompt,
     build_paste_prompt,
 )
-from contextual_intelligence.models import CaptureTier, ContextPayload, PastePayload
+from contextual_intelligence.models import (
+    CaptureTier,
+    ContextPayload,
+    PastePayload,
+    PastePresetId,
+)
 
 
 def test_prompt_marks_selection_in_passage():
@@ -57,6 +62,31 @@ def test_build_paste_prompt_without_app():
     assert "Instruction: summarize" in prompt
     assert "(from" not in prompt
     assert "some text" in prompt
+
+
+def test_build_paste_prompt_includes_selected_output_contract():
+    p = PastePayload(
+        text="name: Ada, role: engineer",
+        instruction="",
+        preset_id=PastePresetId.JSON,
+    )
+    prompt = build_paste_prompt(p)
+    assert "Selected format: JSON" in prompt
+    assert "Output contract:" in prompt
+    assert "Return JSON only" in prompt
+    assert "Additional instruction:" not in prompt
+
+
+def test_build_paste_prompt_combines_contract_and_optional_instruction():
+    p = PastePayload(
+        text="Alpha\nBeta",
+        instruction="Use the columns Name and Status",
+        preset_id=PastePresetId.MARKDOWN_TABLE,
+    )
+    prompt = build_paste_prompt(p)
+    assert "Selected format: Markdown table" in prompt
+    assert "valid GitHub-flavored Markdown table" in prompt
+    assert "Additional instruction: Use the columns Name and Status" in prompt
 
 
 def test_paste_system_prompt_instructions():

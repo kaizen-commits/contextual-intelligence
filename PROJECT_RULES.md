@@ -95,6 +95,10 @@ Use `docs/qa/manual-regression.md` as the repeatable manual QA baseline before m
 
 `pytest-qt` may be added as a dev-only dependency for widget-level signal, focus, button-state, and event-filter regression tests. It does not replace live Windows manual QA.
 
+Run Windows Qt test suites sequentially. Parallel full-suite runs contend for process-global clipboard, hotkey, window, and Qt event-loop state and can create false hangs or crashes. `tests/conftest.py` owns deterministic top-level-widget teardown between tests: close widgets, schedule deletion, explicitly flush `DeferredDelete` events, process remaining events, then run cyclic GC. Do not replace that sequence with `processEvents()` alone; it does not guarantee delivery of deferred deletions when pytest is driving Qt without the main event loop running.
+
+Tests must also neutralize nonessential background threads that perform COM, UI Automation, clipboard, hotkey, or desktop calls. Such threads can outlive the test that spawned them and race later widget teardown even when the Qt disposal sequence is correct. The tray's UIA startup warm-up exists only to hide production cold-start latency, so the default test fixture replaces `_warmup_uia` with a no-op; a focused warm-up test must opt in deliberately and own the thread through completion.
+
 ## Issue tracker and Git evidence rules
 
 For feature or bug work:

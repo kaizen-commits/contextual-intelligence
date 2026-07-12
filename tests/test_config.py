@@ -68,10 +68,38 @@ def test_allows_local_http_endpoints():
     assert Settings(base_url="http://127.0.0.1:1234/v1").base_url == "http://127.0.0.1:1234/v1"
 
 
+def test_allows_private_lan_http_endpoint():
+    endpoint = "http://192.168.1.50:1234/v1"
+    assert Settings(base_url=endpoint).base_url == endpoint
+
+
 def test_rejects_remote_http_endpoint():
     with pytest.raises(ValueError, match="HTTPS is required for non-local endpoints"):
         Settings(base_url="http://llm.example.test/v1")
 
 
+def test_rejects_public_ip_http_endpoint():
+    with pytest.raises(ValueError, match="HTTPS is required for non-local endpoints"):
+        Settings(base_url="http://8.8.8.8:1234/v1")
+
+
 def test_allows_remote_https_endpoint():
     assert Settings(base_url="https://llm.example.test/v1").base_url == "https://llm.example.test/v1"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "ftp://192.168.1.50/v1",
+        "file:///tmp/lm-studio",
+        "192.168.1.50:1234/v1",
+    ],
+)
+def test_rejects_unsupported_or_missing_endpoint_scheme(endpoint):
+    with pytest.raises(ValueError, match="must use http:// or https://"):
+        Settings(base_url=endpoint)
+
+
+def test_rejects_endpoint_without_host():
+    with pytest.raises(ValueError, match="must include a host"):
+        Settings(base_url="https:///v1")

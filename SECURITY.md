@@ -8,7 +8,7 @@ Contextual Intelligence is currently a run-from-source developer preview. Securi
 
 Contextual Intelligence can read selected text and clipboard text when a user triggers a workflow. By default, text is sent only to the configured OpenAI-compatible endpoint, typically LM Studio on the same machine.
 
-If you configure the endpoint to use another machine or a cloud service, selected or copied text will be sent to that endpoint. Treat the configured endpoint as trusted infrastructure. Non-local `http://` endpoints are rejected; keep HTTP endpoints on `localhost`/`127.0.0.1` or use `https://` for remote endpoints.
+If you configure the endpoint to use another machine or a cloud service, selected or copied text will be sent to that endpoint. Treat the configured endpoint as trusted infrastructure. Plain HTTP is accepted only for loopback addresses and literal private/link-local IP addresses; public IPs and hostname-based non-local endpoints require `https://`. A private-LAN HTTP endpoint is not encrypted: other systems with access to that network path may be able to observe the traffic.
 
 The app should not persist clipboard history or selected text to disk. Diagnostic logs should describe capture tier, timing, and failure categories rather than storing user content.
 

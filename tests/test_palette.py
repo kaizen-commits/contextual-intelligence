@@ -4,7 +4,8 @@ from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from contextual_intelligence.config import Settings
-from contextual_intelligence.models import PastePayload, PasteResult
+from contextual_intelligence.models import PastePayload, PastePresetId, PasteResult
+from contextual_intelligence.paste_presets import BUILT_IN_PASTE_PRESETS
 from contextual_intelligence.ui.palette import PastePaletteWindow
 
 
@@ -46,16 +47,21 @@ def test_open_palette_rejects_empty_clipboard(qapp, monkeypatch):
         "contextual_intelligence.ui.palette.has_high_value_non_text_format",
         lambda: False,
     )
+    clipboard_values = iter(["previous text", "   "])
     monkeypatch.setattr(
         "contextual_intelligence.ui.palette.read_text_clipboard",
-        lambda: "   ",
+        lambda: next(clipboard_values),
     )
     settings = Settings()
     llm = MockLlmClient()
     palette = PastePaletteWindow(settings, llm)
 
     palette.open_palette("test.exe")
+    assert palette._clipboard_text == "previous text"
+    palette.open_palette("test.exe")
     assert not palette.instruction_input.isEnabled()
+    assert not palette.preset_combo.isEnabled()
+    assert palette._clipboard_text == ""
     assert not palette.copy_btn.isEnabled()
     assert "empty" in palette.status_label.text()
     palette.close()
@@ -99,6 +105,50 @@ def test_open_palette_valid_clipboard(qapp, monkeypatch):
     assert not palette.copy_btn.isEnabled()
     assert "Ready to transform" in palette.status_label.text()
     assert palette._source_app == "notepad.exe"
+    palette.close()
+
+
+def test_palette_lists_built_in_presets_in_approved_order(qapp):
+    palette = PastePaletteWindow(Settings(), MockLlmClient())
+    assert [palette.preset_combo.itemText(i) for i in range(palette.preset_combo.count())] == [
+        preset.label for preset in BUILT_IN_PASTE_PRESETS
+    ]
+    assert palette.preset_combo.currentData() == PastePresetId.PLAIN
+    palette.close()
+
+
+def test_structured_preset_enables_format_only_send(qapp):
+    palette = PastePaletteWindow(Settings(), MockLlmClient())
+    palette._clipboard_text = "name: Ada, role: engineer"
+
+    palette.preset_combo.setCurrentIndex(
+        palette.preset_combo.findData(PastePresetId.JSON)
+    )
+
+    assert palette.instruction_input.text() == ""
+    assert palette.copy_btn.text() == "Send"
+    assert palette.copy_btn.isEnabled()
+    palette.close()
+
+
+def test_format_only_submit_builds_payload_with_selected_preset(qapp):
+    palette = PastePaletteWindow(Settings(), MockLlmClient(["{}"]))
+    palette._clipboard_text = "name: Ada, role: engineer"
+    palette.preset_combo.setCurrentIndex(
+        palette.preset_combo.findData(PastePresetId.JSON)
+    )
+
+    palette._on_submit()
+
+    assert palette._current_payload is not None
+    assert palette._current_payload.instruction == ""
+    assert palette._current_payload.preset_id == PastePresetId.JSON
+
+    # Drain the worker thread and its queued signals before teardown so stale
+    # events cannot fire against destroyed widgets in later tests.
+    if palette._worker:
+        palette._worker.wait(2000)
+    qapp.processEvents()
     palette.close()
 
 
@@ -219,7 +269,11 @@ def test_history_ring_cycling(qapp, monkeypatch):
 
     # Populate history
     p1 = PastePayload(text="a", instruction="first instruction")
-    p2 = PastePayload(text="b", instruction="second instruction")
+    p2 = PastePayload(
+        text="b",
+        instruction="second instruction",
+        preset_id=PastePresetId.JSON,
+    )
     palette.history = [
         PasteResult(payload=p1, transformed_text="A"),
         PasteResult(payload=p2, transformed_text="B"),
@@ -231,6 +285,7 @@ def test_history_ring_cycling(qapp, monkeypatch):
     ev_up = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Up, Qt.KeyboardModifier.NoModifier)
     palette.keyPressEvent(ev_up)
     assert palette.instruction_input.text() == "second instruction"
+    assert palette.preset_combo.currentData() == PastePresetId.JSON
 
     # Press Up -> first instruction
     palette.keyPressEvent(ev_up)

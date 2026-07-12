@@ -7,8 +7,10 @@ from contextual_intelligence.models import (
     CaptureTier,
     ContextPayload,
     PastePayload,
+    PastePresetId,
     PasteResult,
 )
+from contextual_intelligence.paste_presets import BUILT_IN_PASTE_PRESETS, get_paste_preset
 
 
 def make(**overrides) -> ContextPayload:
@@ -108,6 +110,36 @@ def test_paste_payload_empty_text_rejected(bad):
 def test_paste_payload_empty_instruction_rejected(bad):
     with pytest.raises(ValidationError, match="empty instruction"):
         PastePayload(text="some text", instruction=bad)
+
+
+def test_built_in_paste_presets_have_approved_order():
+    assert [preset.label for preset in BUILT_IN_PASTE_PRESETS] == [
+        "Plain",
+        "Markdown",
+        "Markdown table",
+        "JSON",
+        "Action items",
+    ]
+
+
+def test_plain_preset_requires_instruction():
+    with pytest.raises(ValidationError, match="instruction required"):
+        PastePayload(text="some text", instruction="", preset_id=PastePresetId.PLAIN)
+
+
+@pytest.mark.parametrize(
+    "preset_id",
+    [
+        PastePresetId.MARKDOWN,
+        PastePresetId.MARKDOWN_TABLE,
+        PastePresetId.JSON,
+        PastePresetId.ACTION_ITEMS,
+    ],
+)
+def test_structured_preset_allows_format_only_send(preset_id):
+    payload = PastePayload(text="some text", instruction="", preset_id=preset_id)
+    assert payload.instruction == ""
+    assert get_paste_preset(preset_id).allows_format_only is True
 
 
 def test_paste_payload_oversized_text_rejected():

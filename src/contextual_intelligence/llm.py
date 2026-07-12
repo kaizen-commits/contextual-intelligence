@@ -9,6 +9,7 @@ from openai import OpenAI
 
 from contextual_intelligence.config import Settings
 from contextual_intelligence.models import ContextPayload, PastePayload
+from contextual_intelligence.paste_presets import PastePresetId, get_paste_preset
 
 log = logging.getLogger(__name__)
 
@@ -54,11 +55,21 @@ def build_lookup_prompt(payload: ContextPayload, max_context_chars: int) -> str:
 
 
 def build_paste_prompt(payload: PastePayload) -> str:
+    preset = get_paste_preset(payload.preset_id)
     app_context = f" (from {payload.app_name})" if payload.app_name else ""
-    return (
-        f"Instruction: {payload.instruction}\n\n"
-        f"Input Text{app_context}:\n{payload.text}"
-    )
+    sections = [
+        f"Selected format: {preset.label}",
+        f"Output contract:\n{preset.output_contract}",
+    ]
+    if payload.instruction:
+        instruction_label = (
+            "Instruction"
+            if payload.preset_id == PastePresetId.PLAIN
+            else "Additional instruction"
+        )
+        sections.append(f"{instruction_label}: {payload.instruction}")
+    sections.append(f"Input Text{app_context}:\n{payload.text}")
+    return "\n\n".join(sections)
 
 
 class LlmClient:

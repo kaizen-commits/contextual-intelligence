@@ -13,6 +13,7 @@ from typing import Any
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -31,6 +32,12 @@ from contextual_intelligence.clipboard import (
 from contextual_intelligence.config import Settings
 from contextual_intelligence.llm import LlmClient
 from contextual_intelligence.models import PastePayload, PasteResult
+from contextual_intelligence.paste_presets import (
+    BUILT_IN_PASTE_PRESETS,
+    PastePreset,
+    PastePresetId,
+    get_paste_preset,
+)
 from contextual_intelligence.ui.paste_worker import PasteWorker
 from contextual_intelligence.ui.positioning import clamp_to_screen, position_near_cursor
 
@@ -66,6 +73,15 @@ QLineEdit#InstructionInput {
 }
 QLineEdit#InstructionInput:focus {
     border: 1px solid #818cf8;
+}
+QComboBox#PresetCombo {
+    background-color: #27272a;
+    border: 1px solid #52525b;
+    border-radius: 6px;
+    color: #f4f4f5;
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 10pt;
+    padding: 5px 8px;
 }
 QTextEdit#PreviewEdit {
     background-color: #27272a;
@@ -179,6 +195,20 @@ class PastePaletteWindow(QWidget):
         header_layout.addStretch()
         card_layout.addLayout(header_layout)
 
+        # Built-in output format presets
+        preset_layout = QHBoxLayout()
+        preset_label = QLabel("Format", self.card_frame)
+        preset_layout.addWidget(preset_label)
+        self.preset_combo = QComboBox(self.card_frame)
+        self.preset_combo.setObjectName("PresetCombo")
+        for preset in BUILT_IN_PASTE_PRESETS:
+            # Store the plain string, not the StrEnum: PySide6 keeping a Python
+            # object alive in the combo's item data crashes at widget teardown.
+            self.preset_combo.addItem(preset.label, preset.id.value)
+        self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
+        preset_layout.addWidget(self.preset_combo, 1)
+        card_layout.addLayout(preset_layout)
+
         # Instruction input
         self.instruction_input = QLineEdit(self.card_frame)
         self.instruction_input.setObjectName("InstructionInput")
@@ -231,12 +261,14 @@ class PastePaletteWindow(QWidget):
         """Inspect clipboard and open palette if valid."""
         self.cancel_worker()
         self._source_app = source_app
+        self._clipboard_text = ""
         self._current_result_text = ""
         self._current_payload = None
         self._current_duration_ms = 0.0
         self._history_idx = len(self.history)
         self.preview_edit.clear()
         self.instruction_input.clear()
+        self.preset_combo.setCurrentIndex(0)
         self.copy_btn.setText("Send")
         self.copy_btn.setEnabled(False)
 
@@ -266,6 +298,7 @@ class PastePaletteWindow(QWidget):
 
         self._clipboard_text = text
         self.instruction_input.setEnabled(True)
+        self.preset_combo.setEnabled(True)
         app_msg = f" from {source_app}" if source_app else ""
         self.status_label.setText(f"Ready to transform {len(text):,} chars{app_msg}.")
         self.status_label.show()
@@ -276,6 +309,7 @@ class PastePaletteWindow(QWidget):
         self.status_label.setText(msg)
         self.status_label.show()
         self.instruction_input.setEnabled(False)
+        self.preset_combo.setEnabled(False)
         self.copy_btn.setText("Send")
         self.copy_btn.setEnabled(False)
 
@@ -312,12 +346,26 @@ class PastePaletteWindow(QWidget):
             self._current_result_text
             and self._current_payload
             and text.strip() == self._current_payload.instruction
+            and self._selected_preset().id == self._current_payload.preset_id
         ):
             self.copy_btn.setText("Copy")
             self.copy_btn.setEnabled(True)
         else:
             self.copy_btn.setText("Send")
-            self.copy_btn.setEnabled(bool(text.strip()))
+            self.copy_btn.setEnabled(self._can_submit())
+
+    def _selected_preset(self) -> PastePreset:
+        preset_id = self.preset_combo.currentData()
+        return get_paste_preset(PastePresetId(preset_id))
+
+    def _can_submit(self) -> bool:
+        return bool(self._clipboard_text) and (
+            bool(self.instruction_input.text().strip())
+            or self._selected_preset().allows_format_only
+        )
+
+    def _on_preset_changed(self) -> None:
+        self._on_instruction_changed(self.instruction_input.text())
 
     def _on_primary_btn_clicked(self) -> None:
         if self.copy_btn.text() == "Send":
@@ -327,9 +375,11 @@ class PastePaletteWindow(QWidget):
 
     def _on_submit(self) -> None:
         instruction = self.instruction_input.text().strip()
-        if not instruction:
-            return
         if not self._clipboard_text:
+            return
+
+        preset = self._selected_preset()
+        if not instruction and not preset.allows_format_only:
             return
 
         self.cancel_worker()
@@ -343,6 +393,7 @@ class PastePaletteWindow(QWidget):
             payload = PastePayload(
                 text=self._clipboard_text,
                 instruction=instruction,
+                preset_id=preset.id,
                 app_name=self._source_app,
             )
         except Exception:
@@ -395,13 +446,13 @@ class PastePaletteWindow(QWidget):
         else:
             self.status_label.setText("❌ Model returned empty transformation.")
             self.copy_btn.setText("Send")
-            self.copy_btn.setEnabled(bool(self.instruction_input.text().strip()))
+            self.copy_btn.setEnabled(self._can_submit())
         clamp_to_screen(self)
 
     def _on_error(self, msg: str) -> None:
         self.status_label.setText(f"❌ {msg}")
         self.copy_btn.setText("Send")
-        self.copy_btn.setEnabled(bool(self.instruction_input.text().strip()))
+        self.copy_btn.setEnabled(self._can_submit())
         clamp_to_screen(self)
 
     def _on_copy_clicked(self) -> None:
@@ -435,16 +486,25 @@ class PastePaletteWindow(QWidget):
         if event.key() == Qt.Key.Key_Up:
             if self.history and self._history_idx > 0:
                 self._history_idx -= 1
-                self.instruction_input.setText(self.history[self._history_idx].payload.instruction)
+                payload = self.history[self._history_idx].payload
+                self.instruction_input.setText(payload.instruction)
+                self.preset_combo.setCurrentIndex(
+                    self.preset_combo.findData(payload.preset_id.value)
+                )
             event.accept()
             return
         if event.key() == Qt.Key.Key_Down:
             if self.history and self._history_idx < len(self.history) - 1:
                 self._history_idx += 1
-                self.instruction_input.setText(self.history[self._history_idx].payload.instruction)
+                payload = self.history[self._history_idx].payload
+                self.instruction_input.setText(payload.instruction)
+                self.preset_combo.setCurrentIndex(
+                    self.preset_combo.findData(payload.preset_id.value)
+                )
             elif self._history_idx == len(self.history) - 1:
                 self._history_idx = len(self.history)
                 self.instruction_input.clear()
+                self.preset_combo.setCurrentIndex(0)
             event.accept()
             return
         super().keyPressEvent(event)

@@ -14,6 +14,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from contextual_intelligence.paste_presets import PastePresetId, get_paste_preset
+
 # A "selection" is a word, short phrase, or sentence/passage.
 MAX_SELECTION_CHARS = 1000
 MAX_LOOKUP_CHARS = 150
@@ -125,7 +127,8 @@ class ContextPayload(BaseModel):
 
 class PastePayload(BaseModel):
     text: str
-    instruction: str
+    instruction: str = ""
+    preset_id: PastePresetId = PastePresetId.PLAIN
     app_name: str = ""
     captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -152,10 +155,7 @@ class PastePayload(BaseModel):
     @field_validator("instruction")
     @classmethod
     def _validate_instruction(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("empty instruction")
-        return value
+        return value.strip()
 
     @model_validator(mode="after")
     def _reject_mojibake(self) -> PastePayload:
@@ -163,6 +163,8 @@ class PastePayload(BaseModel):
             raise ValueError("clipboard text looks like mojibake or binary noise")
         if _looks_like_mojibake(self.instruction):
             raise ValueError("instruction looks like mojibake or binary noise")
+        if not self.instruction and not get_paste_preset(self.preset_id).allows_format_only:
+            raise ValueError("empty instruction: instruction required for Plain preset")
         return self
 
 

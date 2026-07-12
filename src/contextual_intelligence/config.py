@@ -8,10 +8,25 @@ from __future__ import annotations
 
 import os
 import tomllib
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, field_validator
+
+_LOCAL_HTTP_NETWORKS = tuple(
+    ip_network(cidr)
+    for cidr in (
+        "127.0.0.0/8",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "169.254.0.0/16",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+    )
+)
 
 # env var -> Settings field
 _ENV_OVERRIDES = {
@@ -56,16 +71,26 @@ class Settings(BaseModel):
 
     @field_validator("base_url")
     @classmethod
-    def _require_tls_for_remote_http(cls, value: str) -> str:
+    def _validate_endpoint_url(cls, value: str) -> str:
         parsed = urlparse(value)
-        if parsed.scheme != "http":
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("Endpoint URL must use http:// or https://")
+        if not parsed.hostname:
+            raise ValueError("Endpoint URL must include a host")
+        if parsed.scheme == "https":
             return value
-        host = (parsed.hostname or "").lower()
-        if host in {"localhost", "127.0.0.1", "::1"}:
+        host = parsed.hostname.lower()
+        if host == "localhost":
+            return value
+        try:
+            address = ip_address(host)
+        except ValueError:
+            address = None
+        if address is not None and any(address in network for network in _LOCAL_HTTP_NETWORKS):
             return value
         raise ValueError(
-            "HTTPS is required for non-local endpoints; use localhost/127.0.0.1 for local "
-            "HTTP LM Studio or configure an https:// endpoint."
+            "HTTPS is required for non-local endpoints; use localhost, a private/local "
+            "network IP for HTTP LM Studio, or configure an https:// endpoint."
         )
 
 

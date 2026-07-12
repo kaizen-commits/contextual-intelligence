@@ -26,12 +26,12 @@ select text → hotkey → capture → validate → local model → popup / prev
 ```
 
 - **Contextual Lookup:** selected text and surrounding context become a compact explanation popup.
-- **Smart Paste:** clipboard text plus an instruction becomes a preview-first transformed result before copy/paste.
+- **Smart Paste:** clipboard text plus a selected format and optional instruction becomes a preview-first transformed result before copy/paste.
 
 ## What it does
 
 - Explains selected words or short phrases in the context where they appear.
-- Transforms copied text through a preview-first Smart Paste palette.
+- Transforms copied text through a preview-first Smart Paste palette with built-in Plain, Markdown, Markdown table, JSON, and Action items formats.
 - Keeps clipboard mutation explicit: transformed text is copied only when the user clicks Copy.
 - Uses local model serving by default through LM Studio's OpenAI-compatible API.
 - Treats unsupported or failed paths as product states that need clear user guidance, not raw internal errors.
@@ -94,15 +94,18 @@ Contextual Intelligence is local-first by default.
 - Logs are intended for capture tier, timing, and failure diagnostics, not content storage.
 
 If you configure LM Studio or another OpenAI-compatible endpoint on another
-machine, selected or copied text will be sent to that endpoint. Non-local
-`http://` endpoints are rejected; use the default local HTTP endpoint or an
-`https://` remote endpoint.
+machine, selected or copied text will be sent to that endpoint. Plain HTTP is
+accepted only for loopback addresses and literal private/link-local IP addresses;
+public IPs and hostname-based non-local endpoints require HTTPS. Traffic to a
+private-LAN HTTP endpoint is not encrypted, so use only infrastructure and
+networks you trust.
 
 ## Requirements
 
 - Windows 11 (Win32 + UI Automation; will not run under WSL)
 - [uv](https://docs.astral.sh/uv/) (Python 3.12 pinned via `.python-version`)
-- LM Studio serving an OpenAI-compatible API on `localhost:1234`
+- LM Studio serving an OpenAI-compatible API on `localhost:1234` by default,
+  or on a trusted private-LAN IP configured through `LMSTUDIO_BASE_URL`
   (default model: `google/gemma-4-e4b`)
 
 Override the model, endpoint, token limits, or API key with
@@ -155,8 +158,9 @@ families rather than strict requirements.
 | Qwen 2.5/3-class 7B instruct model | Often stronger for instruction following and formatting transforms, with higher memory use and latency depending on hardware and quantization. |
 
 If the smoke test fails, check that LM Studio is running, the model is loaded,
-the endpoint is correct, and no environment override points at a non-local
-`http://` endpoint. Remote endpoints must use HTTPS.
+and the endpoint is correct. HTTP endpoints must use loopback or a literal
+private/link-local IP address; public IPs and hostname-based non-local endpoints
+must use HTTPS.
 
 ## Quick start
 
@@ -210,6 +214,7 @@ Local models may produce inaccurate, biased, incomplete, or unexpected text. Do 
 ```text
 src/contextual_intelligence/
 ├── models.py                    ContextPayload, PastePayload, PasteResult — strict validation
+├── paste_presets.py             Built-in Smart Paste formats and output contracts
 ├── clipboard.py                 Public text-only clipboard utility with retry backoff
 ├── capture/
 │   ├── __init__.py              CaptureProvider protocol + tier orchestrator
