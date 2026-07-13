@@ -69,7 +69,7 @@ polish are still planned.
   <tr>
     <td width="50%" align="center" valign="top">
       <video
-        src="https://github.com/user-attachments/assets/e396bf25-fde4-4e89-b26a-7bc751b769aa"
+        src="https://raw.githubusercontent.com/kaizen-commits/contextual-intelligence/96adfafe14527562f7ba6a252f517ef04cf1359d/docs/assets/smart-paste-demo.mp4"
         width="100%"
         controls
       ></video>
@@ -92,7 +92,7 @@ polish are still planned.
   </tr>
 </table>
 
-> GitHub's rendering of repository-local videos can vary. If the video does not
+> GitHub's rendering of embedded videos can vary. If the video does not
 > render in the README, open [`docs/assets/smart-paste-demo.mp4`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/docs/assets/smart-paste-demo.mp4)
 > directly.
 
