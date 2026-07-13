@@ -36,7 +36,11 @@ def get_process_image_name(pid: int) -> str:
         finally:
             kernel32.CloseHandle(handle)
     except Exception as exc:
-        log.debug("process image name lookup failed for pid %s: %s", pid, exc)
+        log.debug(
+            "process image name lookup failed for pid %s (%s)",
+            pid,
+            type(exc).__name__,
+        )
         return ""
 
 
@@ -55,7 +59,7 @@ def get_foreground_app_name() -> str:
         if pid.value:
             return get_process_image_name(pid.value)
     except Exception as exc:
-        log.debug("foreground app name capture failed: %s", exc)
+        log.debug("foreground app name capture failed (%s)", type(exc).__name__)
     return ""
 
 
@@ -140,7 +144,7 @@ class UiaCaptureProvider:
             )
             before = before_range.GetText(-1) or ""
         except Exception as exc:
-            log.debug("before-context expansion failed: %s", exc)
+            log.debug("before-context expansion failed (%s)", type(exc).__name__)
 
         try:
             after_range = sel_range.Clone()
@@ -154,7 +158,7 @@ class UiaCaptureProvider:
             )
             after = after_range.GetText(-1) or ""
         except Exception as exc:
-            log.debug("after-context expansion failed: %s", exc)
+            log.debug("after-context expansion failed (%s)", type(exc).__name__)
 
         # Fallback to string splitting if endpoint manipulation returned empty
         # when an expanded range would have worked.
@@ -175,6 +179,6 @@ class UiaCaptureProvider:
                     before = full[:idx]
                     after = full[idx + len(selected):]
             except Exception as exc:
-                log.debug("fallback context expansion failed: %s", exc)
+                log.debug("fallback context expansion failed (%s)", type(exc).__name__)
 
         return before, after

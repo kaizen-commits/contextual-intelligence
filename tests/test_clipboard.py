@@ -268,3 +268,25 @@ def test_restore_commit_point_exception_text_not_logged(monkeypatch, caplog):
 
     assert outcome == RestoreOutcome.FAILED_CLEARED
     assert _SENTINEL not in caplog.text
+
+
+def test_restore_empty_clipboard_exception_text_not_logged(monkeypatch, caplog):
+    import ctypes
+    import logging
+    from contextual_intelligence import clipboard as clip
+    from contextual_intelligence.models import RestoreOutcome, SnapshotStatus
+
+    monkeypatch.setattr(clip.win32clipboard, "OpenClipboard", lambda: None)
+    monkeypatch.setattr(clip.win32clipboard, "CloseClipboard", lambda: None)
+    monkeypatch.setattr(clip.win32clipboard, "EmptyClipboard", _raiser)
+    monkeypatch.setattr(
+        ctypes.windll.user32, "GetClipboardSequenceNumber", lambda: 100
+    )
+
+    snap = clip.ClipboardSnapshot(status=SnapshotStatus.EMPTY, sequence=99)
+    with caplog.at_level(logging.DEBUG):
+        outcome = clip.restore_clipboard_if_owned(snap, owned_seq=100)
+
+    assert outcome == RestoreOutcome.FAILED
+    assert _SENTINEL not in caplog.text
+    assert "RuntimeError" in caplog.text
