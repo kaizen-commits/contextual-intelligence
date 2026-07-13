@@ -61,13 +61,21 @@ app-compatibility polish are still planned.
 <table border="0">
   <tr>
     <td width="50%" align="center" valign="top">
-      <video src="https://github.com/user-attachments/assets/e396bf25-fde4-4e89-b26a-7bc751b769aa" width="100%" controls></video>
+      <video
+        src="https://github.com/user-attachments/assets/e396bf25-fde4-4e89-b26a-7bc751b769aa"
+        width="100%"
+        controls
+      ></video>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="https://raw.githubusercontent.com/kaizen-commits/contextual-intelligence/main/docs/assets/contextual-lookup.png" alt="Contextual Lookup explains a selected term in place" width="100%">
+      <img
+        src="https://raw.githubusercontent.com/kaizen-commits/contextual-intelligence/main/docs/assets/contextual-lookup.png"
+        alt="Contextual Lookup explains a selected term in place"
+        width="100%"
+      />
     </td>
   </tr>
-    <tr>
+  <tr>
     <td align="center" valign="top">
       <p>Smart Paste transforms copied text through a preview-first palette.</p>
     </td>
@@ -208,6 +216,27 @@ uv run ci-lookup smoke
 uv run ci-lookup capture --delay 3
 uv run ci-lookup lookup --delay 3
 uv run ci-lookup tray
+```
+
+### Running from outside the repository
+
+`uv run` normally discovers a project from the current directory or one of its
+parents. To launch the tray app from another directory, point `uv` at the cloned
+repository explicitly:
+
+```powershell
+$repo = "C:\path\to\contextual-intelligence"
+Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+uv run --project $repo --no-sync ci-lookup tray
+```
+
+`--no-sync` uses the existing, already-synchronized project environment and
+avoids trying to replace the launcher while the tray app is running. After
+pulling dependency or lockfile changes, stop the app and synchronize explicitly:
+
+```powershell
+$repo = "C:\path\to\contextual-intelligence"
+uv sync --project $repo --locked
 ```
 
 `uv run ci-lookup tray` starts the tray app with global hotkeys. Use

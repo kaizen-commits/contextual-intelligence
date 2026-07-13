@@ -31,7 +31,7 @@ def test_cli_malformed_toml(tmp_path, monkeypatch, capsys):
     toml = tmp_path / "config.toml"
     toml.write_text("invalid = { = }")
     monkeypatch.setattr("contextual_intelligence.config.default_config_path", lambda: toml)
-    
+
     code = main(["smoke"])
     assert code == 1
     captured = capsys.readouterr()
@@ -42,7 +42,7 @@ def test_cli_invalid_endpoint(tmp_path, monkeypatch, capsys):
     toml = tmp_path / "config.toml"
     toml.write_text('base_url = "http://llm.example.test/v1"')
     monkeypatch.setattr("contextual_intelligence.config.default_config_path", lambda: toml)
-    
+
     code = main(["smoke"])
     assert code == 1
     captured = capsys.readouterr()
@@ -55,7 +55,7 @@ def test_cli_env_file_dispatch_and_precedence(tmp_path, monkeypatch):
     env.write_text("LMSTUDIO_API_KEY=env-file-key\n")
     monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
     monkeypatch.setattr("contextual_intelligence.config.default_config_path", lambda: tmp_path / "no-config-toml")
-    
+
     # Mock cmd_smoke to inspect loaded settings
     with patch("contextual_intelligence.cli.cmd_smoke") as mock_smoke:
         mock_smoke.return_value = 0
@@ -72,7 +72,7 @@ def test_cli_no_cwd_dotenv_loading(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
     monkeypatch.setattr("contextual_intelligence.config.default_config_path", lambda: tmp_path / "no-config-toml")
-    
+
     with patch("contextual_intelligence.cli.cmd_smoke") as mock_smoke:
         mock_smoke.return_value = 0
         code = main(["smoke"])
