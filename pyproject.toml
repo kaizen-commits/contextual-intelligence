@@ -8,8 +8,9 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Kaizen", email = "6035483+kaizen-commits@users.noreply.github.com" }
 ]
-# No upper bound (P4): untested interpreters are gated by the CI matrix, not
-# by metadata that would make the package quietly uninstallable.
+# No upper bound (P4): CI defines the currently validated set (3.12-3.14).
+# Later Python versions may install but are not claimed as tested until the
+# matrix expands; avoiding a speculative cap keeps future validation possible.
 requires-python = ">=3.12"
 keywords = ["windows", "clipboard", "llm", "local-first", "accessibility", "lm-studio"]
 # Wheel tag decision (P3): the package is pure Python, so the wheel is

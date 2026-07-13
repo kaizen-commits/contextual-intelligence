@@ -47,14 +47,15 @@ select text → hotkey → capture → validate → local model → popup / prev
 
 This is a Windows-only, run-from-source developer preview. Contextual Lookup
 and Smart Paste are implemented and covered by automated/manual regression
-tests, but packaging, installer support, speech input, and broader
-app-compatibility polish are still planned.
+tests. Python wheel/sdist packaging and clean-install checks are implemented;
+installer/binary bundling, signing, speech input, and broader app-compatibility
+polish are still planned.
 
 - **Project knowledge:** longer design notes are maintained in a local LLM Wiki / knowledge base; this repository keeps the public-facing implementation docs.
 - **Project rules:** [`PROJECT_RULES.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
 - **Manual QA:** [`docs/qa/manual-regression.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
 - **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
-- **Status:** Phase 2 (Smart Paste MVP) complete; Phase 3 core robustness complete; startup & packaging polish in progress (this hardening pass); Phase 4 (Speech Input / Voice-to-Transform) planned.
+- **Status:** Phase 2 (Smart Paste MVP) and Phase 3 core robustness are complete; startup and Python-packaging hardening are complete locally; `v0.1.0.dev1` release validation is in progress; Phase 4 (Speech Input / Voice-to-Transform) is planned.
 
 ## Demo
 
@@ -152,7 +153,9 @@ opened and does not mutate it until you explicitly click Copy.
 ## Requirements
 
 - Windows 11 (Win32 + UI Automation; will not run under WSL)
-- [uv](https://docs.astral.sh/uv/) (Python 3.12 pinned via `.python-version`)
+- [uv](https://docs.astral.sh/uv/) (Python 3.12 pinned via `.python-version`;
+  Python 3.12–3.14 are tested for this prerelease, while later Python versions
+  may install but are not yet validated)
 - LM Studio serving an OpenAI-compatible API on `localhost:1234` by default,
   or on a trusted private-LAN IP configured through `LMSTUDIO_BASE_URL`
   (default model: `google/gemma-4-e4b`)
