@@ -247,6 +247,36 @@ def test_tray_watchdog_hard_exits_when_gate_never_clears(qapp, monkeypatch):
     tray._watchdog.cancel()
 
 
+def test_tray_quit_recovers_when_hotkey_thread_stops_late(qapp, monkeypatch):
+    """stop() == False is a one-shot sample: when the thread exits after the
+    bounded waits, its stopped signal must resume the gated shutdown instead
+    of leaving a clean exit to the os._exit watchdog."""
+    tray, m = _mocked_tray(monkeypatch)
+    m.bridge.stop.return_value = False
+
+    tray.quit()
+    assert not tray._teardown_done
+    m.app.quit.assert_not_called()
+
+    # The thread's finally-path notification arrives late -> shutdown resumes.
+    tray._on_hotkey_thread_stopped()
+    assert tray._teardown_done
+    m.app.quit.assert_called_once()
+    assert tray._watchdog.finished.is_set()  # watchdog cancelled, no hard exit
+
+
+def test_hotkey_thread_death_outside_quit_never_tears_down(qapp, monkeypatch):
+    """A hotkey loop dying at runtime must not trigger teardown."""
+    tray, m = _mocked_tray(monkeypatch)
+
+    tray._on_hotkey_thread_stopped()
+    assert not tray._teardown_done
+    m.app.quit.assert_not_called()
+
+    tray.quit()  # a normal quit afterwards still completes
+    assert tray._teardown_done
+
+
 # --- hotkey bridge stop handshake ----------------------------------------------
 
 
@@ -269,11 +299,19 @@ def test_hotkey_bridge_stop_reports_termination(qapp, monkeypatch):
     assert HotkeyBridge().stop() is True
 
     bridge = HotkeyBridge()
+    received = []
+    bridge.stopped.connect(lambda: received.append(True))
     bridge.start({})
     assert bridge._ready.wait(2.0)
     assert bridge.stop() is True
     assert bridge._done.is_set()
     assert not bridge.thread.is_alive()
+
+    # The finally-path stopped signal is delivered (queued) to the GUI thread.
+    deadline = time.monotonic() + 2.0
+    while not received and time.monotonic() < deadline:
+        qapp.processEvents()
+    assert received
 
 
 # --- llm client shutdown surface -----------------------------------------------

@@ -97,13 +97,13 @@ def test_clipboard_capture_password_preflight_blocks(monkeypatch):
     mock_focused = MockFocusedControl(is_password=True, pid=123, hwnd=456)
     monkeypatch.setattr(auto, "GetFocusedControl", lambda: mock_focused)
 
-    ctrl_c_called = False
-    monkeypatch.setattr(clipboard_fallback, "_send_ctrl_c", lambda: exec("ctrl_c_called = True"))
+    def _fail_if_called():
+        raise AssertionError("_send_ctrl_c must not run for protected fields")
+
+    monkeypatch.setattr(clipboard_fallback, "_send_ctrl_c", _fail_if_called)
 
     with pytest.raises(ProtectedFieldError, match="password field; fallback aborted"):
         provider.capture()
-
-    assert not ctrl_c_called
 
 
 def test_clipboard_capture_preflight_none_aborts(monkeypatch):
@@ -407,3 +407,82 @@ def test_clipboard_capture_restore_failed_cleared_raises_integrity_error_cleared
     with pytest.raises(CaptureIntegrityError) as exc_info:
         provider.capture()
     assert exc_info.value.flavor == RestoreFailureFlavor.CLEARED
+
+
+# --- privacy: foreign exception text must not reach reasons or logs -------------
+
+_SENTINEL = "PRIVATE_CONTROL_TEXT"
+
+
+def test_preflight_resolution_exception_text_not_leaked(monkeypatch, caplog):
+    import logging
+
+    provider = ClipboardFallbackProvider()
+    provider.arm()
+
+    def boom():
+        raise RuntimeError(_SENTINEL)
+
+    monkeypatch.setattr(auto, "GetFocusedControl", boom)
+
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(CaptureError) as excinfo:
+            provider.capture()
+
+    assert _SENTINEL not in str(excinfo.value)
+    assert "RuntimeError" in str(excinfo.value)  # class-only category survives
+    assert _SENTINEL not in caplog.text
+
+
+def test_preflight_property_exception_text_not_leaked(monkeypatch, caplog):
+    import logging
+
+    class _PropertyBoom:
+        IsPassword = False
+
+        @property
+        def ProcessId(self):
+            raise RuntimeError(_SENTINEL)
+
+        def GetTopLevelControl(self):
+            return None
+
+    provider = ClipboardFallbackProvider()
+    provider.arm()
+    monkeypatch.setattr(auto, "GetFocusedControl", lambda: _PropertyBoom())
+
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(CaptureError) as excinfo:
+            provider.capture()
+
+    assert _SENTINEL not in str(excinfo.value)
+    assert _SENTINEL not in caplog.text
+
+
+def test_revalidation_exception_text_not_leaked(monkeypatch, caplog):
+    import logging
+
+    calls = {"n": 0}
+
+    def focused_seq():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return MockFocusedControl(is_password=False, pid=123, hwnd=456)
+        raise RuntimeError(_SENTINEL)
+
+    monkeypatch.setattr(auto, "GetFocusedControl", focused_seq)
+    snapshot_val = ClipboardSnapshot(status=SnapshotStatus.TEXT, text="orig", sequence=100)
+    monkeypatch.setattr(clipboard_fallback, "snapshot_clipboard", lambda: snapshot_val)
+    monkeypatch.setattr(
+        clipboard_fallback.user32, "GetClipboardSequenceNumber", lambda: 100
+    )
+
+    provider = ClipboardFallbackProvider()
+    provider.arm()
+
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(CaptureError) as excinfo:
+            provider.capture()
+
+    assert _SENTINEL not in str(excinfo.value)
+    assert _SENTINEL not in caplog.text

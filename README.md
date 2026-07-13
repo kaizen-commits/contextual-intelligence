@@ -133,10 +133,16 @@ understand exactly what it does:
 - **Windows Clipboard History (Win+V), cloud clipboard sync, and third-party
   clipboard managers may observe the temporary selection** — successful
   restoration does not remove it from those histories.
-- If another application changes the clipboard during the capture window, its
-  content is **never overwritten**: restoration happens only when the change
-  can be positively attributed to the target app and the clipboard is still in
-  the state our own copy produced.
+- Restoration is **conditional and avoids observed changes**: it runs only
+  when the detected clipboard change is attributed to the target app's
+  process family (by executable name) and the clipboard still holds exactly
+  the state that attributed copy produced, verified while the clipboard is
+  held open. A change observed from an application with a **different**
+  executable name is never overwritten. One honest limit: attribution is by
+  process family, not exact process identity (deliberately, so multi-process
+  apps like browsers and Electron keep working) — a clipboard write from
+  another process with the **same** executable name cannot always be
+  distinguished from the synthetic copy.
 - If restoration fails, the app **tells you immediately** with actionable
   guidance instead of continuing silently.
 

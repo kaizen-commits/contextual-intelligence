@@ -69,6 +69,7 @@ class HotkeyBridge(QObject):
     lookup_triggered = Signal()
     paste_triggered = Signal(str)  # source app name
     registration_failed = Signal(int, int)  # hotkey_id, vk
+    stopped = Signal()  # loop thread has fully exited (emitted from its finally)
 
     def __init__(self, parent: Any | None = None) -> None:
         super().__init__(parent)
@@ -108,9 +109,20 @@ class HotkeyBridge(QObject):
                 stopping=self._stopping,
             )
         except Exception as exc:
-            log.error("hotkey loop stopped: %s", exc)
+            # HotkeyError messages are our own static strings; anything else
+            # is foreign text that stays out of the logs (class name only).
+            from contextual_intelligence.hotkey import HotkeyError
+
+            if isinstance(exc, HotkeyError):
+                log.error("hotkey loop stopped: %s", exc)
+            else:
+                log.error("hotkey loop stopped (%s)", type(exc).__name__)
         finally:
             self._done.set()
+            # Queued to the GUI thread: lets a gated shutdown resume when the
+            # thread outlives stop()'s bounded waits instead of riding the
+            # watchdog into a hard exit.
+            self.stopped.emit()
 
     def stop(self) -> bool:
         """Stop the message loop. Returns True when the thread has terminated."""
@@ -174,6 +186,7 @@ class TrayApplication(QObject):
         self.hotkey_bridge.lookup_triggered.connect(self.trigger_lookup)
         self.hotkey_bridge.paste_triggered.connect(self.trigger_paste)
         self.hotkey_bridge.registration_failed.connect(self._on_hotkey_failed)
+        self.hotkey_bridge.stopped.connect(self._on_hotkey_thread_stopped)
 
         hotkey_map = {
             LOOKUP_HOTKEY_ID: (
@@ -339,8 +352,15 @@ class TrayApplication(QObject):
             if w.isRunning()
         ]
 
+    def _on_hotkey_thread_stopped(self) -> None:
+        """Delayed completion of a hotkey thread that outlived stop()'s bounded
+        waits — resume the gated shutdown instead of leaving it to the watchdog."""
+        self._hotkey_stopped = True
+        if self._quitting:
+            self._try_finish_quit()
+
     def _try_finish_quit(self) -> None:
-        if self._teardown_done:
+        if self._teardown_done or not self._quitting:
             return
         blockers = self._live_shutdown_blockers()
         if blockers or not self._hotkey_stopped:

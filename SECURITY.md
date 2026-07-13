@@ -21,9 +21,15 @@ send a synthetic `Ctrl+C` to the focused application after UIA capture fails.
 The security-relevant properties are:
 
 - Clipboard text is temporarily replaced during the capture, then restored
-  under a verified transaction (restore happens only when the change is
-  attributed to the target application and the clipboard still holds our own
-  copy's state; intervening external clipboard changes are never overwritten).
+  under a conditional, verified transaction: restoration runs only when the
+  detected change is attributed to the target application's process family
+  (by executable image name) and the clipboard sequence still matches that
+  attributed write, compared while the clipboard is held open. Observed
+  sequence changes are never overwritten. Attribution is deliberately
+  family-level rather than exact process identity — multi-process apps
+  (Chromium/Electron) set the clipboard from a sibling process — so a write
+  from another process with the same executable name cannot always be
+  distinguished from the synthetic copy.
 - Rich clipboard formats are not preserved; captures are refused when the
   clipboard holds images, files, audio, or other unrestorable content.
 - Windows Clipboard History (Win+V), cross-device clipboard sync, and

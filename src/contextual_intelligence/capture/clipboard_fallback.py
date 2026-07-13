@@ -245,8 +245,10 @@ class ClipboardFallbackProvider:
             try:
                 focused = auto.GetFocusedControl()
             except Exception as exc:
+                # Class name only: UIA exception text can carry focused-control
+                # metadata, and CaptureError.reason reaches diagnostic logs.
                 raise CaptureError(
-                    f"focused control resolution failed during preflight: {exc}",
+                    f"focused control resolution failed during preflight ({type(exc).__name__})",
                     CaptureTier.CLIPBOARD,
                 )
 
@@ -267,7 +269,7 @@ class ClipboardFallbackProvider:
                 if isinstance(exc, ProtectedFieldError):
                     raise
                 raise CaptureError(
-                    f"failed to read UIA properties during preflight: {exc}",
+                    f"failed to read UIA properties during preflight ({type(exc).__name__})",
                     CaptureTier.CLIPBOARD,
                 )
 
@@ -311,7 +313,7 @@ class ClipboardFallbackProvider:
                 if isinstance(exc, (ProtectedFieldError, CaptureError)):
                     raise
                 raise CaptureError(
-                    f"target revalidation failed: {exc}",
+                    f"target revalidation failed ({type(exc).__name__})",
                     CaptureTier.CLIPBOARD,
                 )
 
@@ -439,7 +441,9 @@ class ClipboardFallbackProvider:
                                 before = full[:idx][-_MAX_CONTEXT_CHARS_PER_SIDE:]
                                 after = full[idx + len(copied_text):][:_MAX_CONTEXT_CHARS_PER_SIDE]
         except Exception as exc:
-            log.debug("fallback document range context extraction failed: %s", exc)
+            log.debug(
+                "fallback document range context extraction failed (%s)", type(exc).__name__
+            )
 
         return ContextPayload(
             selected_text=copied_text,

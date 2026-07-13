@@ -96,7 +96,7 @@ class LlmClient:
         try:
             self._client.close()
         except Exception as exc:
-            log.debug("llm client close failed: %s", exc)
+            log.debug("llm client close failed (%s)", type(exc).__name__)
 
     def list_models(self) -> list[str]:
         return [m.id for m in self._client.models.list()]

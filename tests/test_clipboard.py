@@ -208,3 +208,63 @@ def test_restore_clipboard_if_owned_failed_cleared(monkeypatch):
 
     assert res == RestoreOutcome.FAILED_CLEARED
     assert "empty" in calls
+
+
+# --- privacy: foreign exception text must not reach the logs --------------------
+
+_SENTINEL = "PRIVATE_CONTROL_TEXT"
+
+
+def _raiser(*args, **kwargs):
+    raise RuntimeError(_SENTINEL)
+
+
+def test_write_clipboard_failure_exception_text_not_logged(monkeypatch, caplog):
+    import logging
+    from contextual_intelligence import clipboard as clip
+
+    monkeypatch.setattr(clip.win32clipboard, "OpenClipboard", _raiser)
+    monkeypatch.setattr(clip.time, "sleep", lambda s: None)
+
+    with caplog.at_level(logging.DEBUG):
+        assert clip.write_text_clipboard("x") is False
+
+    assert _SENTINEL not in caplog.text
+    assert "RuntimeError" in caplog.text  # class-only category survives
+
+
+def test_snapshot_failure_exception_text_not_logged(monkeypatch, caplog):
+    import logging
+    from contextual_intelligence import clipboard as clip
+    from contextual_intelligence.models import SnapshotStatus
+
+    monkeypatch.setattr(clip.win32clipboard, "OpenClipboard", _raiser)
+    monkeypatch.setattr(clip.time, "sleep", lambda s: None)
+
+    with caplog.at_level(logging.DEBUG):
+        snap = clip.snapshot_clipboard()
+
+    assert snap.status == SnapshotStatus.UNAVAILABLE
+    assert _SENTINEL not in caplog.text
+
+
+def test_restore_commit_point_exception_text_not_logged(monkeypatch, caplog):
+    import ctypes
+    import logging
+    from contextual_intelligence import clipboard as clip
+    from contextual_intelligence.models import RestoreOutcome, SnapshotStatus
+
+    monkeypatch.setattr(clip.win32clipboard, "OpenClipboard", lambda: None)
+    monkeypatch.setattr(clip.win32clipboard, "CloseClipboard", lambda: None)
+    monkeypatch.setattr(clip.win32clipboard, "EmptyClipboard", lambda: None)
+    monkeypatch.setattr(clip.win32clipboard, "SetClipboardData", _raiser)
+    monkeypatch.setattr(
+        ctypes.windll.user32, "GetClipboardSequenceNumber", lambda: 100
+    )
+
+    snap = clip.ClipboardSnapshot(status=SnapshotStatus.TEXT, text="orig", sequence=99)
+    with caplog.at_level(logging.DEBUG):
+        outcome = clip.restore_clipboard_if_owned(snap, owned_seq=100)
+
+    assert outcome == RestoreOutcome.FAILED_CLEARED
+    assert _SENTINEL not in caplog.text

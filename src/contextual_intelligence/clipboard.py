@@ -109,7 +109,10 @@ def write_text_clipboard(text: str) -> bool:
                 win32clipboard.CloseClipboard()
             return True
         except Exception as exc:
-            log.debug("clipboard write failed, retrying: %s", exc)
+            # Class name only: exception text on these paths can carry
+            # clipboard/window internals, and SECURITY.md promises category
+            # logging, not content.
+            log.debug("clipboard write failed, retrying (%s)", type(exc).__name__)
             time.sleep(0.02)
     log.error("failed to write to clipboard after 5 retries")
     return False
@@ -165,7 +168,7 @@ def snapshot_clipboard() -> ClipboardSnapshot:
             finally:
                 win32clipboard.CloseClipboard()
         except Exception as exc:
-            log.debug("clipboard snapshot failed, retrying: %s", exc)
+            log.debug("clipboard snapshot failed, retrying (%s)", type(exc).__name__)
             time.sleep(0.02)
     return ClipboardSnapshot(status=SnapshotStatus.UNAVAILABLE)
 
@@ -196,7 +199,7 @@ def restore_clipboard_if_owned(snapshot: ClipboardSnapshot, owned_seq: int | Non
         try:
             win32clipboard.EmptyClipboard()
         except Exception as exc:
-            log.error("EmptyClipboard failed: %s", exc)
+            log.error("EmptyClipboard failed during restore (%s)", type(exc).__name__)
             return RestoreOutcome.FAILED
 
         if snapshot.status == SnapshotStatus.EMPTY:
@@ -207,7 +210,9 @@ def restore_clipboard_if_owned(snapshot: ClipboardSnapshot, owned_seq: int | Non
                 win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, snapshot.text)
                 return RestoreOutcome.RESTORED
             except Exception as exc:
-                log.error("SetClipboardData failed after EmptyClipboard: %s", exc)
+                log.error(
+                    "SetClipboardData failed after EmptyClipboard (%s)", type(exc).__name__
+                )
                 return RestoreOutcome.FAILED_CLEARED
 
         return RestoreOutcome.RESTORED
