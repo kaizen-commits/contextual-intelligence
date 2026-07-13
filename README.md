@@ -69,7 +69,7 @@ polish are still planned.
   <tr>
     <td width="50%" align="center" valign="top">
       <video
-        src="https://github.com/user-attachments/assets/e396bf25-fde4-4e89-b26a-7bc751b769aa"
+        src="https://github.com/user-attachments/assets/dce05187-94f0-44c7-ae96-d708045b38b0"
         width="100%"
         controls
       ></video>
