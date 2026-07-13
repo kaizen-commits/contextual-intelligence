@@ -321,16 +321,19 @@ class ClipboardFallbackProvider:
             # 4. Copy
             _send_ctrl_c()
 
-            # Poll up to 400ms for sequence number change
+            # Poll up to 400ms for sequence number change, recording the exact
+            # sequence value we detected — that value (not a later re-read) is
+            # the only write attribution can vouch for.
             start_wait = time.perf_counter()
-            seq_changed = False
+            detected_seq = None
             while time.perf_counter() - start_wait < 0.4:
-                if user32.GetClipboardSequenceNumber() != seq_before:
-                    seq_changed = True
+                current_seq = user32.GetClipboardSequenceNumber()
+                if current_seq != seq_before:
+                    detected_seq = current_seq
                     break
                 time.sleep(0.01)
 
-            if not seq_changed:
+            if detected_seq is None:
                 raise CaptureError(
                     "clipboard sequence number did not increment (Ctrl+C failed or no selection)",
                     CaptureTier.CLIPBOARD,
@@ -359,7 +362,13 @@ class ClipboardFallbackProvider:
                     CaptureTier.CLIPBOARD,
                 )
 
-            owned_seq = user32.GetClipboardSequenceNumber()
+            # Adopt the detection-time sequence, NOT a fresh read: a fresh read
+            # here would claim ownership of any write that landed after the
+            # owner check, and the restore stage would then overwrite it. A
+            # write landing between detection and here either flips the owner
+            # (attribution abort above) or moves the sequence past detected_seq
+            # (stable-read abort below / EXTERNAL_CHANGE no-op in restore).
+            owned_seq = detected_seq
 
             # 6. Owned read
             copied_text = _save_clipboard()

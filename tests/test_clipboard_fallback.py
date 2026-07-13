@@ -323,10 +323,9 @@ def test_clipboard_capture_stable_read_violation_aborts(monkeypatch):
     monkeypatch.setattr(clipboard_fallback, "snapshot_clipboard", lambda: snapshot_val)
 
     # Call 1 (drift check): 100
-    # Call 2 (poll): 101
-    # Call 3 (owned_seq): 101
-    # Call 4 (stable read check): 102
-    seq_vals = [100, 101, 101, 102]
+    # Call 2 (poll -> detected_seq/owned_seq): 101
+    # Call 3 (stable read check): 102 — a second writer landed after detection
+    seq_vals = [100, 101, 102]
     seq_iter = iter(seq_vals)
     monkeypatch.setattr(clipboard_fallback.user32, "GetClipboardSequenceNumber", lambda: next(seq_iter))
     monkeypatch.setattr(clipboard_fallback, "_send_ctrl_c", lambda: None)
@@ -337,10 +336,21 @@ def test_clipboard_capture_stable_read_violation_aborts(monkeypatch):
         return 1
     monkeypatch.setattr(clipboard_fallback.user32, "GetWindowThreadProcessId", mock_get_thread_process_id)
     monkeypatch.setattr(clipboard_fallback, "_save_clipboard", lambda: "copied text")
-    monkeypatch.setattr(clipboard_fallback, "restore_clipboard_if_owned", lambda s, o: RestoreOutcome.RESTORED)
+    restore_calls = []
+
+    def mock_restore(snap, owned_seq):
+        restore_calls.append(owned_seq)
+        return RestoreOutcome.RESTORED
+
+    monkeypatch.setattr(clipboard_fallback, "restore_clipboard_if_owned", mock_restore)
 
     with pytest.raises(CaptureError, match="sequence changed during read; interference detected"):
         provider.capture()
+
+    # Ownership is the DETECTION-time sequence (101), never a post-attribution
+    # re-read (which would have been 102 — the second writer's value, letting
+    # restore overwrite that writer's content).
+    assert restore_calls == [101]
 
 
 def test_clipboard_capture_restore_failed_raises_integrity_error_never_wrote(monkeypatch):
