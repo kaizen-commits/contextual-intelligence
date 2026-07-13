@@ -22,11 +22,17 @@ should fail safely instead of being forced through capture.
 ## 30-second mental model
 
 ```text
-select text → hotkey → capture → validate → local model → popup / preview
+Contextual Lookup: select text → Ctrl+Alt+D → explanation
+Smart Paste: copy text → Ctrl+Alt+V → transform → preview → Copy
 ```
 
 - **Contextual Lookup:** selected text and surrounding context become a compact explanation popup.
 - **Smart Paste:** clipboard text plus a selected format and optional instruction becomes a preview-first transformed result before copy/paste.
+
+Smart Paste transforms the **current clipboard contents**, not the current
+selection. Selecting different text without copying it leaves the previous
+clipboard text as Smart Paste's input; copy the text you want to transform
+before pressing `Ctrl+Alt+V`.
 
 ## What it does
 

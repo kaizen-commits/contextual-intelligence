@@ -23,12 +23,13 @@ Record results in the task tracker as pass/fail notes with the branch, commit, a
 ## Smart Paste smoke tests
 
 - [ ] Copy plain text, trigger `Ctrl+Alt+V`, leave **Plain** selected, type an instruction, send, preview result, click Copy, and manually paste the result.
+- [ ] Select different text without copying it, then open Smart Paste; confirm it still uses the previous clipboard text. Copy the new selection and reopen Smart Paste; confirm the input updates.
 - [ ] Confirm the format picker lists **Plain**, **Markdown**, **Markdown table**, **JSON**, and **Action items** in that order.
 - [ ] With **Plain** selected and no instruction, confirm Send remains disabled.
 - [ ] Select each structured preset with a blank instruction and confirm Send is enabled because the preset supplies the transformation contract.
 - [ ] Run a format-only transform for Markdown, Markdown table, JSON, and Action items; confirm the preview follows the selected contract without introductory or concluding commentary.
 - [ ] Add an optional instruction to a structured preset and confirm it refines rather than removes the selected output format.
-- [ ] Ask for Markdown output and confirm Markdown syntax is preserved when requested.
+- [ ] Ask for Markdown output and confirm valid Markdown syntax is preserved when requested. Equivalent list markers such as `- [ ]` and `* [ ]` are both acceptable; exact marker choice may vary between model runs.
 - [ ] Submit a second instruction after a result; primary button state is clear before and after the result.
 - [ ] Change the selected preset after a result; the primary button returns to Send instead of copying a stale result.
 - [ ] Use Up/Down instruction history and confirm the associated preset is restored with the instruction.
