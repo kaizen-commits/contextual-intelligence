@@ -61,7 +61,7 @@ polish are still planned.
 - **Project rules:** [`PROJECT_RULES.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
 - **Manual QA:** [`docs/qa/manual-regression.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
 - **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
-- **Status:** Phase 2 (Smart Paste MVP) and Phase 3 core robustness are complete; startup and Python-packaging hardening are complete locally; `v0.1.0.dev1` release validation is in progress; Phase 4 (Speech Input / Voice-to-Transform) is planned.
+- **Status:** Phase 2 (Smart Paste MVP), Phase 3 core robustness, and startup/Python-packaging hardening are complete; `v0.1.0-dev.1` release validation is complete; Phase 4 (Speech Input / Voice-to-Transform) is planned.
 
 ## Demo
 
