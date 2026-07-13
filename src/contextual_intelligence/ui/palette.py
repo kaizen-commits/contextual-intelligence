@@ -31,7 +31,7 @@ from contextual_intelligence.clipboard import (
 )
 from contextual_intelligence.config import Settings
 from contextual_intelligence.llm import LlmClient
-from contextual_intelligence.models import PastePayload, PasteResult
+from contextual_intelligence.models import MAX_PASTE_INPUT_CHARS, PastePayload, PasteResult
 from contextual_intelligence.paste_presets import (
     BUILT_IN_PASTE_PRESETS,
     PastePreset,
@@ -165,6 +165,7 @@ class PastePaletteWindow(QWidget):
 
         self.history: list[PasteResult] = []
         self._worker: PasteWorker | None = None
+        self._retiring: PasteWorker | None = None
         self._clipboard_text: str = ""
         self._source_app: str = ""
         self._current_result_text: str = ""
@@ -288,7 +289,7 @@ class PastePaletteWindow(QWidget):
             return
 
         # 3. Length check (reject at open/validate, do not truncate)
-        max_chars = self._settings.max_paste_input_chars
+        max_chars = MAX_PASTE_INPUT_CHARS
         if len(text) > max_chars:
             self._show_error(
                 f"❌ Clipboard text too long ({len(text):,} chars > {max_chars:,} limit)."
@@ -301,6 +302,8 @@ class PastePaletteWindow(QWidget):
         self.preset_combo.setEnabled(True)
         app_msg = f" from {source_app}" if source_app else ""
         self.status_label.setText(f"Ready to transform {len(text):,} chars{app_msg}.")
+        if self._busy_with_previous():
+            self.status_label.setText("⏳ Finishing previous request…")
         self.status_label.show()
 
         self._present_window()
@@ -333,13 +336,57 @@ class PastePaletteWindow(QWidget):
             self._worker = None
 
     def cancel_worker(self, timeout_ms: int = 2000) -> bool:
+        """Cancel the active worker and wait for it to exit (bounded wait).
+
+        On timeout the worker is *retired*, not dropped: the reference is
+        retained (a running QThread must never be released — repeated stalls
+        would accumulate unbounded threads) and new work is rejected until it
+        finishes.
+        """
         res = True
         if self._worker is not None and self._worker.isRunning():
             log.info("cancelling active paste worker thread")
             self._worker.cancel()
             res = self._worker.wait(timeout_ms)
+            if not res:
+                self._retire_worker()
+                return False
         self._cleanup_worker()
         return res
+
+    def request_cancel(self) -> None:
+        """Signal cancellation without waiting (shutdown path)."""
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.cancel()
+
+    def live_workers(self) -> list[PasteWorker]:
+        """Workers that have not finished; the tray's shutdown gate consumes this."""
+        return [
+            w for w in (self._worker, self._retiring) if w is not None and not w.isFinished()
+        ]
+
+    def _busy_with_previous(self) -> bool:
+        return self._retiring is not None and not self._retiring.isFinished()
+
+    def _retire_worker(self) -> None:
+        worker = self._worker
+        if worker is None:
+            return
+        try:
+            worker.disconnect(self)
+        except Exception:
+            pass
+        self._worker = None
+        self._retiring = worker
+        worker.finished.connect(self._on_retiring_finished)
+
+    def _on_retiring_finished(self) -> None:
+        worker = self._retiring
+        if worker is not None:
+            self._retiring = None
+            worker.deleteLater()
+        if "Finishing previous request" in self.status_label.text():
+            self.status_label.setText("Ready. Press Send to try again.")
 
     def _on_instruction_changed(self, text: str) -> None:
         if (
@@ -382,7 +429,17 @@ class PastePaletteWindow(QWidget):
         if not instruction and not preset.allows_format_only:
             return
 
-        self.cancel_worker()
+        # No replacement while a worker lives (active or retiring): request
+        # cancellation cooperatively and make the user retry once it exits.
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.cancel()
+            self.status_label.setText("⏳ Finishing previous request…")
+            return
+        if self._busy_with_previous():
+            self.status_label.setText("⏳ Finishing previous request…")
+            return
+
+        self._cleanup_worker()
         self.copy_btn.setText("Send")
         self.copy_btn.setEnabled(False)
         self.preview_edit.clear()
@@ -413,10 +470,20 @@ class PastePaletteWindow(QWidget):
         self._worker = worker
         worker.start()
 
+    def _stale_signal(self) -> bool:
+        """True when a queued signal from a superseded worker arrives after
+        disconnect — Qt still delivers already-queued cross-thread signals."""
+        sender = self.sender()
+        return sender is not None and sender is not self._worker
+
     def _on_started(self) -> None:
+        if self._stale_signal():
+            return
         self.status_label.setText("⏳ Streaming transformation from LM Studio...")
 
     def _on_retrying(self, attempt: int) -> None:
+        if self._stale_signal():
+            return
         self._current_result_text = ""
         self.preview_edit.clear()
         self.copy_btn.setText("Send")
@@ -424,6 +491,8 @@ class PastePaletteWindow(QWidget):
         self.status_label.setText(f"⏳ Empty response from model, retrying (attempt {attempt})...")
 
     def _on_token(self, chunk: str) -> None:
+        if self._stale_signal():
+            return
         self._current_result_text += chunk
         # Use insertPlainText or setPlainText for smooth preview updates
         self.preview_edit.setPlainText(self._current_result_text)
@@ -433,6 +502,8 @@ class PastePaletteWindow(QWidget):
         clamp_to_screen(self)
 
     def _on_finished(self, transformed_text: str, duration_ms: float) -> None:
+        if self._stale_signal():
+            return
         self._current_result_text = transformed_text
         self._current_duration_ms = duration_ms
         self.preview_edit.setPlainText(transformed_text)
@@ -450,6 +521,8 @@ class PastePaletteWindow(QWidget):
         clamp_to_screen(self)
 
     def _on_error(self, msg: str) -> None:
+        if self._stale_signal():
+            return
         self.status_label.setText(f"❌ {msg}")
         self.copy_btn.setText("Send")
         self.copy_btn.setEnabled(self._can_submit())

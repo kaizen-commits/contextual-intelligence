@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -20,6 +21,9 @@ from contextual_intelligence.models import (
     MAX_LOOKUP_CHARS,
     RECENT_COPY_TTL_SECONDS,
     RecentAppCopy,
+    ProtectedFieldError,
+    CaptureIntegrityError,
+    RestoreFailureFlavor,
 )
 
 log = logging.getLogger(__name__)
@@ -53,19 +57,24 @@ class LookupWorker(QThread):
         parent: Any | None = None,
         recent_copy: RecentAppCopy | None = None,
         prefer_recent_copy: bool = False,
+        fallback_enabled: bool = False,
     ) -> None:
         super().__init__(parent)
         self._orchestrator = orchestrator
         self._llm_client = llm_client
         self._recent_copy = recent_copy
-        # When lookup is triggered while the palette is visible, the source
-        # app's leftover selection is stale — a valid in-app copy wins over
-        # capture instead of only backstopping its failure (SCOPE-30 QA).
         self._prefer_recent_copy = prefer_recent_copy
-        self._cancelled = False
+        self._fallback_enabled = fallback_enabled
+        # An Event, never reset inside run(): a cancel issued between start()
+        # and the thread's first instruction must stick.
+        self._cancel = threading.Event()
 
     def cancel(self) -> None:
-        self._cancelled = True
+        self._cancel.set()
+
+    @property
+    def was_cancelled(self) -> bool:
+        return self._cancel.is_set()
 
     def _recent_copy_payload(self) -> ContextPayload | None:
         """Handoff for text the app itself just copied (SCOPE-30).
@@ -95,7 +104,10 @@ class LookupWorker(QThread):
             return None
 
     def run(self) -> None:
-        self._cancelled = False
+        # Cancellation checkpoint: before any signal, capture, or LLM work — a
+        # pre-cancelled worker must make zero orchestrator and zero LLM calls.
+        if self._cancel.is_set():
+            return
         t_start = time.perf_counter()
         self.started_capture.emit()
 
@@ -109,13 +121,39 @@ class LookupWorker(QThread):
                 )
 
         if payload is None:
+            if self._cancel.is_set():  # checkpoint: before capture
+                return
             try:
                 payload = self._orchestrator.capture()
+            except ProtectedFieldError as exc:
+                log.warning("protected field capture blocked after %.2fs: %s", time.perf_counter() - t_start, exc)
+                self.error_occurred.emit("Lookup is disabled in password and protected fields for your privacy.")
+                return
+            except CaptureIntegrityError as exc:
+                log.warning("capture integrity error after %.2fs: %s", time.perf_counter() - t_start, exc)
+                if exc.flavor == RestoreFailureFlavor.CLEARED:
+                    self.error_occurred.emit(
+                        "Clipboard restoration failed. Your original clipboard text could not be "
+                        "put back and the clipboard has been cleared."
+                    )
+                else:
+                    self.error_occurred.emit(
+                        "Clipboard restoration failed. The selected text may still be on your clipboard. "
+                        "Copy something else or clear it (Win+V -> Clear all) before continuing."
+                    )
+                return
             except CaptureError as exc:
                 log.warning("capture failed after %.2fs: %s", time.perf_counter() - t_start, exc)
                 payload = self._recent_copy_payload()
                 if payload is None:
-                    self.error_occurred.emit(_CAPTURE_FAILED_GUIDANCE)
+                    if self._fallback_enabled:
+                        self.error_occurred.emit(_CAPTURE_FAILED_GUIDANCE)
+                    else:
+                        self.error_occurred.emit(
+                            "Lookup needs an active selection, and this app doesn't expose one to "
+                            "Windows accessibility. You can enable the clipboard-fallback capture in config.toml "
+                            "(see README: Clipboard fallback) — it briefly copies your selection."
+                        )
                     return
                 log.info(
                     "all capture tiers failed; using recent Smart Paste copy handoff (%d chars)",
@@ -127,7 +165,7 @@ class LookupWorker(QThread):
                 return
 
         t_captured = time.perf_counter()
-        if self._cancelled:
+        if self._cancel.is_set():
             return
 
         self.capture_succeeded.emit(payload)
@@ -147,17 +185,19 @@ class LookupWorker(QThread):
         try:
             while True:
                 attempt += 1
+                if self._cancel.is_set():  # checkpoint: before each stream creation/retry
+                    break
                 got_visible = False
                 for chunk in self._llm_client.stream_lookup(payload):
                     if t_first_token is None:
                         t_first_token = time.perf_counter()
-                    if self._cancelled:
+                    if self._cancel.is_set():
                         break
                     n_chars += len(chunk)
                     if chunk.strip():
                         got_visible = True
                     self.token_received.emit(chunk)
-                if got_visible or self._cancelled or attempt > _EMPTY_RESPONSE_RETRIES:
+                if got_visible or self._cancel.is_set() or attempt > _EMPTY_RESPONSE_RETRIES:
                     break
                 log.warning(
                     "model returned empty response, retrying (attempt %d of %d)",
@@ -187,7 +227,7 @@ class LookupWorker(QThread):
             (t_end - t_first_token) if t_first_token is not None else 0.0,
             t_end - t_start,
             (f" attempts={attempt}" if attempt > 1 else "")
-            + (" (cancelled)" if self._cancelled else ""),
+            + (" (cancelled)" if self._cancel.is_set() else ""),
         )
-        if not self._cancelled:
+        if not self._cancel.is_set():
             self.finished_lookup.emit()

@@ -18,7 +18,7 @@ def qapp():
 def test_tray_application_init_and_triggers(qapp, monkeypatch):
     # Mock hotkey bridge so we don't spawn real win32 threads in tests
     monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.start", lambda self, hm: None)
-    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: None)
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: True)
 
     settings = Settings()
     orchestrator = MagicMock()
@@ -54,7 +54,7 @@ def test_tray_application_init_and_triggers(qapp, monkeypatch):
 
 def test_tray_application_mutual_exclusion_scope_23(qapp, monkeypatch):
     monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.start", lambda self, hm: None)
-    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: None)
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: True)
     monkeypatch.setattr("PySide6.QtCore.QTimer.singleShot", lambda delay, cb: cb())
     monkeypatch.setattr(
         "contextual_intelligence.ui.palette.has_high_value_non_text_format",
@@ -90,7 +90,7 @@ def test_tray_application_mutual_exclusion_scope_23(qapp, monkeypatch):
 def test_tray_records_only_short_palette_copies(qapp, monkeypatch):
     """Only lookup-sized palette copies are recorded for the handoff (SCOPE-30)."""
     monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.start", lambda self, hm: None)
-    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: None)
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: True)
 
     tray = TrayApplication(Settings(), MagicMock(), MagicMock())
     assert tray._recent_app_copy is None
@@ -110,7 +110,7 @@ def test_tray_records_only_short_palette_copies(qapp, monkeypatch):
 def test_tray_lookup_from_palette_prefers_recent_copy(qapp, monkeypatch):
     """Lookup triggered while the palette is visible sets prefer_recent_copy (SCOPE-30 QA)."""
     monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.start", lambda self, hm: None)
-    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: None)
+    monkeypatch.setattr("contextual_intelligence.ui.tray.HotkeyBridge.stop", lambda self: True)
     monkeypatch.setattr("PySide6.QtCore.QTimer.singleShot", lambda delay, cb: cb())
 
     tray = TrayApplication(Settings(), MagicMock(), MagicMock())

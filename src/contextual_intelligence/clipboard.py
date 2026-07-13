@@ -6,11 +6,15 @@ discipline to survive transient clipboard locks from other applications.
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import time
+from dataclasses import dataclass
 
 import win32clipboard
 import win32con
+
+from contextual_intelligence.models import RestoreOutcome, SnapshotStatus
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +30,13 @@ _HIGH_VALUE_NON_TEXT_FORMATS = {
     win32con.CF_WAVE,
     win32con.CF_RIFF,
 }
+
+
+@dataclass
+class ClipboardSnapshot:
+    status: SnapshotStatus
+    text: str | None = None
+    sequence: int = 0
 
 
 def has_high_value_non_text_format() -> bool:
@@ -98,7 +109,112 @@ def write_text_clipboard(text: str) -> bool:
                 win32clipboard.CloseClipboard()
             return True
         except Exception as exc:
-            log.debug("clipboard write failed, retrying: %s", exc)
+            # Class name only: exception text on these paths can carry
+            # clipboard/window internals, and SECURITY.md promises category
+            # logging, not content.
+            log.debug("clipboard write failed, retrying (%s)", type(exc).__name__)
             time.sleep(0.02)
     log.error("failed to write to clipboard after 5 retries")
     return False
+
+
+def snapshot_clipboard() -> ClipboardSnapshot:
+    """Enumerate formats and snapshot the clipboard in a single OpenClipboard session.
+
+    Returns a ClipboardSnapshot containing status, sequence number, and Unicode text.
+    """
+    user32 = ctypes.windll.user32
+    for _ in range(5):
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                seq = user32.GetClipboardSequenceNumber()
+
+                fmt = 0
+                formats = []
+                while True:
+                    fmt = win32clipboard.EnumClipboardFormats(fmt)
+                    if fmt == 0:
+                        break
+                    formats.append(fmt)
+
+                if not formats:
+                    return ClipboardSnapshot(status=SnapshotStatus.EMPTY, sequence=seq)
+
+                unsupported = False
+                for f in formats:
+                    if f in _HIGH_VALUE_NON_TEXT_FORMATS:
+                        unsupported = True
+                        break
+
+                if unsupported:
+                    return ClipboardSnapshot(status=SnapshotStatus.UNSUPPORTED, sequence=seq)
+
+                text = None
+                if win32clipboard.IsClipboardFormatAvailable(win32con.CF_UNICODETEXT):
+                    text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
+                elif win32clipboard.IsClipboardFormatAvailable(win32con.CF_TEXT):
+                    data = win32clipboard.GetClipboardData(win32con.CF_TEXT)
+                    text = (
+                        data.decode("utf-8", errors="replace")
+                        if isinstance(data, bytes)
+                        else str(data)
+                    )
+
+                if text is not None:
+                    return ClipboardSnapshot(status=SnapshotStatus.TEXT, text=text, sequence=seq)
+
+                return ClipboardSnapshot(status=SnapshotStatus.UNSUPPORTED, sequence=seq)
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception as exc:
+            log.debug("clipboard snapshot failed, retrying (%s)", type(exc).__name__)
+            time.sleep(0.02)
+    return ClipboardSnapshot(status=SnapshotStatus.UNAVAILABLE)
+
+
+def restore_clipboard_if_owned(snapshot: ClipboardSnapshot, owned_seq: int | None) -> RestoreOutcome:
+    """Single conditional-restore operation under a single OpenClipboard acquisition."""
+    if owned_seq is None:
+        return RestoreOutcome.NO_OWNERSHIP
+
+    user32 = ctypes.windll.user32
+    opened = False
+    for _ in range(5):
+        try:
+            win32clipboard.OpenClipboard()
+            opened = True
+            break
+        except Exception:
+            time.sleep(0.02)
+
+    if not opened:
+        return RestoreOutcome.FAILED
+
+    try:
+        current_seq = user32.GetClipboardSequenceNumber()
+        if current_seq != owned_seq:
+            return RestoreOutcome.EXTERNAL_CHANGE
+
+        try:
+            win32clipboard.EmptyClipboard()
+        except Exception as exc:
+            log.error("EmptyClipboard failed during restore (%s)", type(exc).__name__)
+            return RestoreOutcome.FAILED
+
+        if snapshot.status == SnapshotStatus.EMPTY:
+            return RestoreOutcome.RESTORED
+
+        if snapshot.status == SnapshotStatus.TEXT and snapshot.text is not None:
+            try:
+                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, snapshot.text)
+                return RestoreOutcome.RESTORED
+            except Exception as exc:
+                log.error(
+                    "SetClipboardData failed after EmptyClipboard (%s)", type(exc).__name__
+                )
+                return RestoreOutcome.FAILED_CLEARED
+
+        return RestoreOutcome.RESTORED
+    finally:
+        win32clipboard.CloseClipboard()

@@ -15,12 +15,12 @@ import argparse
 import logging
 import sys
 import time
+import tomllib
+from pathlib import Path
 
 from openai import APIConnectionError
+from pydantic import ValidationError
 
-from contextual_intelligence.capture import CaptureOrchestrator
-from contextual_intelligence.capture.clipboard_fallback import ArmedClipboardCapture
-from contextual_intelligence.capture.uia import UiaCaptureProvider
 from contextual_intelligence.config import Settings, default_config_path, load_settings
 from contextual_intelligence.llm import LlmClient
 from contextual_intelligence.log import setup_logging
@@ -29,11 +29,18 @@ from contextual_intelligence.models import CaptureError, ContextPayload
 log = logging.getLogger(__name__)
 
 
-def build_orchestrator(settings: Settings) -> CaptureOrchestrator:
-    return CaptureOrchestrator([
-        UiaCaptureProvider(context_chars_per_side=settings.context_chars_per_side),
-        ArmedClipboardCapture(),
-    ])
+def build_orchestrator(settings: Settings):
+    from contextual_intelligence.capture import CaptureOrchestrator
+    from contextual_intelligence.capture.uia import UiaCaptureProvider
+
+    providers = [
+        UiaCaptureProvider(context_chars_per_side=settings.context_chars_per_side)
+    ]
+    if settings.enable_clipboard_fallback:
+        from contextual_intelligence.capture.clipboard_fallback import ArmedClipboardCapture
+        providers.append(ArmedClipboardCapture())
+
+    return CaptureOrchestrator(providers)
 
 
 def _countdown(seconds: int) -> None:
@@ -110,6 +117,17 @@ def cmd_listen(settings: Settings) -> int:
 
 
 def cmd_tray(settings: Settings) -> int:
+    # Imported lazily: the guard module binds kernel32 at import, and cli.py
+    # must stay importable on any platform (the sys.platform guard depends on it).
+    from contextual_intelligence.instance import acquire_single_instance_lock
+
+    if not acquire_single_instance_lock():
+        print(
+            "contextual-intelligence is already running (check the system tray)",
+            file=sys.stderr,
+        )
+        return 1
+
     from contextual_intelligence.ui.tray import TrayApplication
 
     app = TrayApplication(
@@ -122,7 +140,12 @@ def cmd_tray(settings: Settings) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ci-lookup", description=__doc__)
-    parser.add_argument("--log-level", default=None)
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "debug", "info", "warning", "error", "critical"],
+        default=None,
+    )
+    parser.add_argument("--env-file", default=None)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("smoke")
     for name in ("capture", "lookup"):
@@ -137,7 +160,30 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
-    settings = load_settings()
+
+    if sys.platform != "win32":
+        print("error: Contextual Intelligence requires Windows", file=sys.stderr)
+        return 1
+
+    env_file = Path(args.env_file) if args.env_file else None
+    if env_file and not env_file.is_file():
+        print(f"config error: env file not found: {args.env_file}", file=sys.stderr)
+        return 1
+
+    try:
+        settings = load_settings(dotenv=env_file)
+    except (ValidationError, tomllib.TOMLDecodeError, OSError, ValueError) as exc:
+        err_msg = str(exc)
+        if isinstance(exc, ValidationError):
+            errors = exc.errors()
+            if errors:
+                first = errors[0]
+                loc = " -> ".join(str(x) for x in first.get("loc", []))
+                msg = first.get("msg", "invalid value")
+                err_msg = f"{loc}: {msg}" if loc else msg
+        print(f"config error: {err_msg} — check %APPDATA%\\contextual-intelligence\\config.toml", file=sys.stderr)
+        return 1
+
     setup_logging(args.log_level or settings.log_level)
 
     match args.command:

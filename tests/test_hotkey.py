@@ -27,10 +27,17 @@ class MockUser32:
         self.unregistered.append(id_)
         return 1
 
+    def PeekMessageW(self, lpMsg, hwnd, min_val, max_val, remove):
+        # Real PeekMessageW creates the thread's message queue as a side effect.
+        return 0
+
     def GetMessageW(self, lpMsg, hwnd, min_val, max_val):
         if not self.messages:
             return 0
-        msg_type, wparam = self.messages.pop(0)
+        entry = self.messages.pop(0)
+        if entry == "ERROR":
+            return -1
+        msg_type, wparam = entry
         msg_obj = ctypes.cast(lpMsg, ctypes.POINTER(ctypes.wintypes.MSG)).contents
         msg_obj.message = msg_type
         msg_obj.wParam = wparam
@@ -103,3 +110,39 @@ def test_all_hotkeys_fail_raises_error(monkeypatch):
     }
     with pytest.raises(HotkeyError, match="All hotkeys failed to register"):
         run_hotkey_loop(hotkey_map=hm)
+
+
+def test_get_message_error_breaks_loop_without_dispatch(monkeypatch):
+    """GetMessageW returns a tri-state: -1 is an error and the MSG must not be
+    dispatched (`!= 0` would loop on garbage forever)."""
+    mock = MockUser32(messages=["ERROR", (WM_HOTKEY, LOOKUP_HOTKEY_ID)])
+    monkeypatch.setattr("ctypes.windll.user32", mock)
+
+    called = []
+    run_hotkey_loop(hotkey_map={LOOKUP_HOTKEY_ID: (0x44, lambda: called.append(True))})
+
+    assert called == []  # the message after the error was never consumed
+    assert mock.messages  # loop exited on the error, not by draining the queue
+    assert mock.unregistered == [LOOKUP_HOTKEY_ID]
+
+
+def test_ready_fires_after_queue_creation_and_stopping_preempts_loop(monkeypatch):
+    """The stop handshake: on_ready fires once WM_QUIT can be posted safely, and
+    a stop requested before the loop starts is honored without entering it."""
+    import threading
+
+    mock = MockUser32(messages=[(WM_HOTKEY, LOOKUP_HOTKEY_ID)])
+    monkeypatch.setattr("ctypes.windll.user32", mock)
+
+    events = []
+    stopping = threading.Event()
+    stopping.set()  # stop requested before the loop begins
+
+    run_hotkey_loop(
+        hotkey_map={LOOKUP_HOTKEY_ID: (0x44, lambda: events.append("hotkey"))},
+        on_ready=lambda: events.append("ready"),
+        stopping=stopping,
+    )
+
+    assert events == ["ready"]  # ready fired; the queued hotkey was never dispatched
+    assert mock.unregistered == [LOOKUP_HOTKEY_ID]  # cleanup ran on the early-out path

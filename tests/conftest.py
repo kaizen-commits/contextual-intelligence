@@ -12,22 +12,9 @@ import gc
 
 import pytest
 
-
-@pytest.fixture(autouse=True)
-def _no_uia_warmup(monkeypatch):
-    """Disable TrayApplication's UIA warm-up thread during tests.
-
-    The warm-up daemon thread initializes COM and calls GetFocusedControl(),
-    which can invoke in-process UIA providers on this process's own Qt
-    windows while a test (or the disposal fixture below) is destroying them —
-    an intermittent access violation. The warm-up only exists to hide cold
-    startup latency in the real app; it has no value in tests.
-    """
-    try:
-        from contextual_intelligence.ui import tray
-    except ImportError:
-        return
-    monkeypatch.setattr(tray.TrayApplication, "_warmup_uia", lambda self: None)
+# Note: the UIA warm-up thread (and the fixture that suppressed it here) was
+# removed in the hardening pass — production no longer starts an unowned COM
+# thread that could race Qt widget destruction.
 
 
 @pytest.fixture(autouse=True)

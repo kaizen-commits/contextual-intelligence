@@ -63,6 +63,8 @@ class CaptureOrchestrator:
             try:
                 payload = provider.capture()
             except CaptureError as exc:
+                if getattr(exc, "is_terminal", False):
+                    raise
                 ms = (time.perf_counter() - start) * 1000
                 reason = exc.reason
                 self.last_attempts.append(CaptureAttempt(provider.name, False, ms, reason))

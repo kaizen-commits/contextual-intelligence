@@ -1,5 +1,5 @@
 """Settings: defaults overridable by %APPDATA%\\contextual-intelligence\\config.toml,
-then by environment variables (a repo-root .env is loaded if present).
+then by environment variables (loaded only via explicit --env-file).
 
 Precedence: env var > config.toml > default.
 """
@@ -12,7 +12,7 @@ from ipaddress import ip_address, ip_network
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict, StrictBool
 
 _LOCAL_HTTP_NETWORKS = tuple(
     ip_network(cidr)
@@ -34,7 +34,6 @@ _ENV_OVERRIDES = {
     "LMSTUDIO_BASE_URL": "base_url",
     "CI_MODEL": "model",
     "CI_PASTE_HOTKEY_VK": "paste_hotkey_vk",
-    "CI_MAX_PASTE_INPUT_CHARS": "max_paste_input_chars",
     "CI_MAX_PASTE_OUTPUT_TOKENS": "max_paste_output_tokens",
 }
 
@@ -64,10 +63,15 @@ class Settings(BaseModel):
     max_prompt_context_chars: int = 1500
     max_answer_tokens: int = 1024
     paste_hotkey_vk: int = 0x56  # ord('V')
-    max_paste_input_chars: int = 8000
     max_paste_output_tokens: int = 4096
     request_timeout_s: float = 30.0
     log_level: str = "INFO"
+    enable_clipboard_fallback: StrictBool = False
+
+    model_config = ConfigDict(
+        extra="forbid",
+        hide_input_in_errors=True,
+    )
 
     @field_validator("base_url")
     @classmethod
@@ -93,13 +97,60 @@ class Settings(BaseModel):
             "network IP for HTTP LM Studio, or configure an https:// endpoint."
         )
 
+    @field_validator("request_timeout_s")
+    @classmethod
+    def _validate_timeout(cls, value: float) -> float:
+        if not (0 < value <= 300):
+            raise ValueError("request_timeout_s must be in range (0, 300]")
+        return value
+
+    @field_validator("max_answer_tokens", "max_paste_output_tokens")
+    @classmethod
+    def _validate_tokens(cls, value: int) -> int:
+        if not (1 <= value <= 32768):
+            raise ValueError("Token fields must be in range [1, 32768]")
+        return value
+
+    @field_validator("context_chars_per_side", "max_prompt_context_chars")
+    @classmethod
+    def _validate_context(cls, value: int) -> int:
+        if not (0 <= value <= 20000):
+            raise ValueError("Context fields must be in range [0, 20000]")
+        return value
+
+    @field_validator("paste_hotkey_vk")
+    @classmethod
+    def _validate_hotkey(cls, value: int) -> int:
+        if not (0x01 <= value <= 0xFE):
+            raise ValueError("paste_hotkey_vk must be in range [0x01, 0xFE]")
+        return value
+
+    @field_validator("log_level")
+    @classmethod
+    def _validate_log_level(cls, value: str) -> str:
+        levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        val_upper = value.upper()
+        if val_upper not in levels:
+            raise ValueError(f"log_level must be one of {levels}")
+        return val_upper
+
 
 def default_config_path() -> Path:
     return Path(os.environ.get("APPDATA", Path.home())) / "contextual-intelligence" / "config.toml"
 
 
 def load_settings(path: Path | None = None, dotenv: Path | None = None) -> Settings:
-    load_dotenv(dotenv or Path.cwd() / ".env")
+    # Migration detection for CI_MAX_PASTE_INPUT_CHARS env var
+    import logging
+    logger = logging.getLogger(__name__)
+    if "CI_MAX_PASTE_INPUT_CHARS" in os.environ:
+        logger.warning(
+            "CI_MAX_PASTE_INPUT_CHARS environment variable is deprecated and no longer supported. "
+            "The input character limit is fixed at 8000. Please remove it from your environment."
+        )
+
+    if dotenv is not None:
+        load_dotenv(dotenv)
     path = path or default_config_path()
     data: dict = {}
     if path.is_file():

@@ -79,7 +79,24 @@ class LlmClient:
             base_url=settings.base_url,
             api_key=settings.api_key,
             timeout=settings.request_timeout_s,
+            # The SDK default (2) would silently re-send interactive requests
+            # and triple the worst-case shutdown stall; failures surface to the
+            # UI immediately instead.
+            max_retries=0,
         )
+
+    def close(self) -> None:
+        """Close the underlying HTTP client, aborting in-flight streams.
+
+        Shutdown acceleration, not proof of cancellation: a worker blocked in
+        network I/O unblocks with an exception (already sanitized by the
+        workers), but a wedged cross-process UIA call is unaffected.
+        Idempotent; never raises.
+        """
+        try:
+            self._client.close()
+        except Exception as exc:
+            log.debug("llm client close failed (%s)", type(exc).__name__)
 
     def list_models(self) -> list[str]:
         return [m.id for m in self._client.models.list()]

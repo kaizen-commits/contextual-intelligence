@@ -22,11 +22,17 @@ should fail safely instead of being forced through capture.
 ## 30-second mental model
 
 ```text
-select text → hotkey → capture → validate → local model → popup / preview
+Contextual Lookup: select text → Ctrl+Alt+D → explanation
+Smart Paste: copy text → Ctrl+Alt+V → transform → preview → Copy
 ```
 
 - **Contextual Lookup:** selected text and surrounding context become a compact explanation popup.
 - **Smart Paste:** clipboard text plus a selected format and optional instruction becomes a preview-first transformed result before copy/paste.
+
+Smart Paste transforms the **current clipboard contents**, not the current
+selection. Selecting different text without copying it leaves the previous
+clipboard text as Smart Paste's input; copy the text you want to transform
+before pressing `Ctrl+Alt+V`.
 
 ## What it does
 
@@ -47,27 +53,36 @@ select text → hotkey → capture → validate → local model → popup / prev
 
 This is a Windows-only, run-from-source developer preview. Contextual Lookup
 and Smart Paste are implemented and covered by automated/manual regression
-tests, but packaging, installer support, speech input, and broader
-app-compatibility polish are still planned.
+tests. Python wheel/sdist packaging and clean-install checks are implemented;
+installer/binary bundling, signing, speech input, and broader app-compatibility
+polish are still planned.
 
 - **Project knowledge:** longer design notes are maintained in a local LLM Wiki / knowledge base; this repository keeps the public-facing implementation docs.
-- **Project rules:** [`PROJECT_RULES.md`](PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
-- **Manual QA:** [`docs/qa/manual-regression.md`](docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
+- **Project rules:** [`PROJECT_RULES.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/PROJECT_RULES.md) — canonical project-specific agent, QA, and graceful degradation rules. Tool-specific files such as `GEMINI.md`, `AGENTS.md`, or `CLAUDE.md`, if added, should point back there.
+- **Manual QA:** [`docs/qa/manual-regression.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/docs/qa/manual-regression.md) — repeatable smoke, coexistence, clipboard, placement, failure-state, and graceful degradation checks.
 - **Task tracking:** work is managed in an issue tracker with acceptance criteria and QA evidence.
-- **Status:** Phase 2 (Smart Paste MVP) & Phase 3 (Robustness & Graceful Degradation) Complete; Phase 4 (Speech Input / Voice-to-Transform) planned.
+- **Status:** Phase 2 (Smart Paste MVP), Phase 3 core robustness, and startup/Python-packaging hardening are complete; `v0.1.0-dev.1` release validation is complete; Phase 4 (Speech Input / Voice-to-Transform) is planned.
 
 ## Demo
 
 <table border="0">
   <tr>
     <td width="50%" align="center" valign="top">
-      <video src="https://github.com/user-attachments/assets/e396bf25-fde4-4e89-b26a-7bc751b769aa" width="100%" controls></video>
+      <video
+        src="https://github.com/user-attachments/assets/e396bf25-fde4-4e89-b26a-7bc751b769aa"
+        width="100%"
+        controls
+      ></video>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="docs/assets/contextual-lookup.png" alt="Contextual Lookup explains a selected term in place" width="100%">
+      <img
+        src="https://raw.githubusercontent.com/kaizen-commits/contextual-intelligence/main/docs/assets/contextual-lookup.png"
+        alt="Contextual Lookup explains a selected term in place"
+        width="100%"
+      />
     </td>
   </tr>
-    <tr>
+  <tr>
     <td align="center" valign="top">
       <p>Smart Paste transforms copied text through a preview-first palette.</p>
     </td>
@@ -78,7 +93,7 @@ app-compatibility polish are still planned.
 </table>
 
 > GitHub's rendering of repository-local videos can vary. If the video does not
-> render in the README, open [`docs/assets/smart-paste-demo.mp4`](docs/assets/smart-paste-demo.mp4)
+> render in the README, open [`docs/assets/smart-paste-demo.mp4`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/docs/assets/smart-paste-demo.mp4)
 > directly.
 
 ## Privacy and data handling
@@ -100,17 +115,60 @@ public IPs and hostname-based non-local endpoints require HTTPS. Traffic to a
 private-LAN HTTP endpoint is not encrypted, so use only infrastructure and
 networks you trust.
 
+## Clipboard fallback (opt-in)
+
+Contextual Lookup is UIA-first. When an app does not expose selected text
+through Windows accessibility, a clipboard-based capture fallback exists — but
+it is **disabled by default** and must be explicitly enabled in
+`%APPDATA%\contextual-intelligence\config.toml`:
+
+```toml
+enable_clipboard_fallback = true
+```
+
+When enabled, invoking Lookup authorizes a temporary synthetic copy
+(`Ctrl+C` sent to the focused app) only after UIA capture fails, and the
+popup visibly identifies results captured this way. Before enabling it,
+understand exactly what it does:
+
+- Your clipboard text is **temporarily replaced** during the capture and then
+  restored.
+- Rich clipboard formats (HTML/RTF metadata alongside text) are **not
+  preserved** — only the text is restored. Captures are refused outright when
+  the clipboard holds images, files, audio, or other content that could not be
+  restored.
+- **Windows Clipboard History (Win+V), cloud clipboard sync, and third-party
+  clipboard managers may observe the temporary selection** — successful
+  restoration does not remove it from those histories.
+- Restoration is **conditional and avoids observed changes**: it runs only
+  when the detected clipboard change is attributed to the target app's
+  process family (by executable name) and the clipboard still holds exactly
+  the state that attributed copy produced, verified while the clipboard is
+  held open. A change observed from an application with a **different**
+  executable name is never overwritten. One honest limit: attribution is by
+  process family, not exact process identity (deliberately, so multi-process
+  apps like browsers and Electron keep working) — a clipboard write from
+  another process with the **same** executable name cannot always be
+  distinguished from the synthetic copy.
+- If restoration fails, the app **tells you immediately** with actionable
+  guidance instead of continuing silently.
+
+Smart Paste's guarantee is separate and unchanged: it reads the clipboard when
+opened and does not mutate it until you explicitly click Copy.
+
 ## Requirements
 
 - Windows 11 (Win32 + UI Automation; will not run under WSL)
-- [uv](https://docs.astral.sh/uv/) (Python 3.12 pinned via `.python-version`)
+- [uv](https://docs.astral.sh/uv/) (Python 3.12 pinned via `.python-version`;
+  Python 3.12–3.14 are tested for this prerelease, while later Python versions
+  may install but are not yet validated)
 - LM Studio serving an OpenAI-compatible API on `localhost:1234` by default,
   or on a trusted private-LAN IP configured through `LMSTUDIO_BASE_URL`
   (default model: `google/gemma-4-e4b`)
 
-Override the model, endpoint, token limits, or API key with
-`%APPDATA%\contextual-intelligence\config.toml` or environment variables such
-as `LMSTUDIO_BASE_URL`, `LMSTUDIO_API_KEY`, and `CI_MODEL`.
+Override the model, endpoint, token limits, or API key using the configuration file `%APPDATA%\contextual-intelligence\config.toml` or process environment variables (such as `LMSTUDIO_BASE_URL`, `LMSTUDIO_API_KEY`, and `CI_MODEL`).
+
+For development and debugging, you can load settings from an explicit environment file by passing the `--env-file PATH` option to the command line at startup. Note that configuration files (including `.env` files) are never loaded implicitly from the current working directory.
 
 ### First-run checklist
 
@@ -173,6 +231,27 @@ uv run ci-lookup smoke
 uv run ci-lookup capture --delay 3
 uv run ci-lookup lookup --delay 3
 uv run ci-lookup tray
+```
+
+### Running from outside the repository
+
+`uv run` normally discovers a project from the current directory or one of its
+parents. To launch the tray app from another directory, point `uv` at the cloned
+repository explicitly:
+
+```powershell
+$repo = "C:\path\to\contextual-intelligence"
+Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+uv run --project $repo --no-sync ci-lookup tray
+```
+
+`--no-sync` uses the existing, already-synchronized project environment and
+avoids trying to replace the launcher while the tray app is running. After
+pulling dependency or lockfile changes, stop the app and synchronize explicitly:
+
+```powershell
+$repo = "C:\path\to\contextual-intelligence"
+uv sync --project $repo --locked
 ```
 
 `uv run ci-lookup tray` starts the tray app with global hotkeys. Use
@@ -242,7 +321,7 @@ failure reason so fallback work is driven by telemetry, not guesses.
 
 ## Security notes
 
-See [`SECURITY.md`](SECURITY.md) for vulnerability reporting and endpoint trust notes.
+See [`SECURITY.md`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/SECURITY.md) for vulnerability reporting and endpoint trust notes.
 
 ## Third-party licensing
 
@@ -265,4 +344,4 @@ Final product decisions, testing, integration, and release responsibility remain
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](https://github.com/kaizen-commits/contextual-intelligence/blob/main/LICENSE).

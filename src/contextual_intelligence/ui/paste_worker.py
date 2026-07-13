@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -39,13 +40,22 @@ class PasteWorker(QThread):
         super().__init__(parent)
         self._payload = payload
         self._llm_client = llm_client
-        self._cancelled = False
+        # An Event, never reset inside run(): a cancel issued between start()
+        # and the thread's first instruction must stick.
+        self._cancel = threading.Event()
 
     def cancel(self) -> None:
-        self._cancelled = True
+        self._cancel.set()
+
+    @property
+    def was_cancelled(self) -> bool:
+        return self._cancel.is_set()
 
     def run(self) -> None:
-        self._cancelled = False
+        # Cancellation checkpoint: before any signal or LLM work — a
+        # pre-cancelled worker must make zero LLM calls.
+        if self._cancel.is_set():
+            return
         t_start = time.perf_counter()
         self.started_transform.emit()
 
@@ -55,18 +65,20 @@ class PasteWorker(QThread):
         try:
             while True:
                 attempt += 1
+                if self._cancel.is_set():  # checkpoint: before each stream creation/retry
+                    break
                 transformed_text = ""
                 got_visible = False
                 for chunk in self._llm_client.stream_transform(self._payload):
                     if t_first_token is None:
                         t_first_token = time.perf_counter()
-                    if self._cancelled:
+                    if self._cancel.is_set():
                         break
                     transformed_text += chunk
                     if chunk.strip():
                         got_visible = True
                     self.token_received.emit(chunk)
-                if got_visible or self._cancelled or attempt > _EMPTY_RESPONSE_RETRIES:
+                if got_visible or self._cancel.is_set() or attempt > _EMPTY_RESPONSE_RETRIES:
                     break
                 log.warning(
                     "model returned empty response for paste transform, retrying (attempt %d of %d)",
@@ -97,7 +109,7 @@ class PasteWorker(QThread):
             (t_end - t_first_token) if t_first_token is not None else 0.0,
             t_end - t_start,
             (f" attempts={attempt}" if attempt > 1 else "")
-            + (" (cancelled)" if self._cancelled else ""),
+            + (" (cancelled)" if self._cancel.is_set() else ""),
         )
-        if not self._cancelled:
+        if not self._cancel.is_set():
             self.finished_transform.emit(transformed_text.strip(), duration_ms)

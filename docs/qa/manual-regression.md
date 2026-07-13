@@ -23,12 +23,13 @@ Record results in the task tracker as pass/fail notes with the branch, commit, a
 ## Smart Paste smoke tests
 
 - [ ] Copy plain text, trigger `Ctrl+Alt+V`, leave **Plain** selected, type an instruction, send, preview result, click Copy, and manually paste the result.
+- [ ] Select different text without copying it, then open Smart Paste; confirm it still uses the previous clipboard text. Copy the new selection and reopen Smart Paste; confirm the input updates.
 - [ ] Confirm the format picker lists **Plain**, **Markdown**, **Markdown table**, **JSON**, and **Action items** in that order.
 - [ ] With **Plain** selected and no instruction, confirm Send remains disabled.
 - [ ] Select each structured preset with a blank instruction and confirm Send is enabled because the preset supplies the transformation contract.
 - [ ] Run a format-only transform for Markdown, Markdown table, JSON, and Action items; confirm the preview follows the selected contract without introductory or concluding commentary.
 - [ ] Add an optional instruction to a structured preset and confirm it refines rather than removes the selected output format.
-- [ ] Ask for Markdown output and confirm Markdown syntax is preserved when requested.
+- [ ] Ask for Markdown output and confirm valid Markdown syntax is preserved when requested. Equivalent list markers such as `- [ ]` and `* [ ]` are both acceptable; exact marker choice may vary between model runs.
 - [ ] Submit a second instruction after a result; primary button state is clear before and after the result.
 - [ ] Change the selected preset after a result; the primary button returns to Send instead of copying a stale result.
 - [ ] Use Up/Down instruction history and confirm the associated preset is restored with the instruction.
@@ -64,6 +65,18 @@ Record results in the task tracker as pass/fail notes with the branch, commit, a
 - [ ] Empty model response: app reports the capability boundary or retry guidance, not a silent failure.
 - [ ] Slow response: cancel/close paths remain safe and late worker output does not corrupt the current UI.
 - [ ] Logs contain technical reasons while the user-facing UI stays plain-language.
+
+## Hardening pass: startup, lifecycle, and fallback consent
+
+- [ ] With `enable_clipboard_fallback` absent/false (the default), trigger Lookup in an app without UIA TextPattern (e.g. Obsidian reading view); the guidance card names clipboard fallback and where to enable it, and no synthetic copy occurs.
+- [ ] With `enable_clipboard_fallback = true`, the same lookup succeeds and the popup caption shows "captured via clipboard fallback".
+- [ ] Fallback with an initially empty clipboard: after the capture, the clipboard is empty again (not holding the selection).
+- [ ] Fallback with text on the clipboard: after the capture, the exact original text is back on the clipboard.
+- [ ] Restoration failure: run `uv run python scripts/qa/clipboard_locker.py`, then trigger a fallback capture within 30s. The popup shows the clipboard-restoration-failed guidance and no LLM answer. (The locker is phase-aware: it waits for the synthetic copy before locking — a locker held from the start only exercises the pre-mutation UNAVAILABLE branch.)
+- [ ] Launch `ci-lookup tray` twice; the second instance prints "already running" and exits without touching the tray.
+- [ ] With another tool owning `Ctrl+Alt+V` (e.g. an AutoHotkey one-liner), start the tray app; a balloon warning names the failed shortcut, the tooltip lists only the working one, and Lookup still works.
+- [ ] Quit the tray app during an in-flight lookup; the app exits cleanly within seconds, no zombie process remains, and the log shows no shutdown-watchdog CRITICAL entry.
+- [ ] From a directory outside the repository (with `LMSTUDIO_*` cleared from the environment), `ci-lookup smoke` succeeds using `%APPDATA%\contextual-intelligence\config.toml` alone.
 
 ## Graceful degradation acceptance framework
 
